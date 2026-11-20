@@ -55,9 +55,27 @@ kbd { font: 500 10px var(--mono); color: var(--text-4); border: 1px solid var(--
 .chip .plan { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; padding: 1px 6px; border-radius: 4px; background: var(--text); color: #000; }
 .chip.search { color: var(--text-4); }
 .chip.on { border-color: var(--rail); color: #fff; background: var(--surface-2); }
-.acctchip { max-width: 260px; }
-.acctchip .em { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-@media (max-width: 1250px) { .acctchip .em, .acctchip .plan { display: none; } .acctchip { padding: 0 10px; } }
+.rail.left { container-type: inline-size; }
+.account { flex: none; position: relative; padding: 8px; border-top: 1px solid var(--hair); }
+.acc-btn { width: 100%; display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 10px 0 6px; border-radius: var(--radius); text-align: left; color: var(--text-2); }
+.acc-btn:hover, .acc-btn.on { background: var(--surface-2); color: #fff; }
+.acc-ava { flex: none; width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #fff; color: #000; font: 600 13px var(--sans); }
+.acc-ava.big { width: 36px; height: 36px; font-size: 15px; }
+.acc-name { flex: 1; min-width: 0; font: 500 13px var(--sans); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-btn .plan { font: 500 10px var(--mono); text-transform: uppercase; letter-spacing: 0.1em; padding: 1px 6px; border-radius: 4px; background: var(--surface-3); color: var(--text-3); border: 1px solid var(--hair); flex: none; }
+.acc-caret { font-size: 10px; flex: none; }
+.acc-veil { position: fixed; inset: 0; z-index: 44; }
+.acc-menu { position: absolute; left: 8px; bottom: calc(100% + 4px); z-index: 45; width: 260px; padding: 6px; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.8); display: flex; flex-direction: column; gap: 1px; animation: rise 0.15s; }
+.acc-menu hr { border: 0; border-top: 1px solid var(--hair); margin: 5px 0; }
+.acc-who { display: flex; align-items: center; gap: 10px; padding: 8px 8px 4px; min-width: 0; }
+.acc-who > div { min-width: 0; }
+.acc-who b, .acc-who small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-who b { font: 600 13px var(--sans); color: #fff; }
+.acc-who small { font: 400 11.5px var(--sans); color: var(--text-4); }
+.acc-menu button { display: flex; align-items: center; gap: 10px; text-align: left; padding: 8px 10px; border-radius: 6px; font: 400 13px var(--sans); color: var(--text-2); }
+.acc-menu button:hover:not(:disabled) { background: var(--surface-3); color: #fff; }
+.acc-menu button.danger { color: #fff; }
+@container (max-width: 120px) { .acc-name, .acc-btn .plan, .acc-caret { display: none; } .acc-btn { justify-content: center; padding: 0; } }
 .pbtns { display: flex; align-items: center; gap: 1px; padding: 0 4px; border-left: 1px solid var(--hair); border-right: 1px solid var(--hair); }
 .icon.on { color: #000; background: #fff; }
 .icon.on:hover { color: #000; background: var(--text-2); }

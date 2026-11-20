@@ -305,15 +305,6 @@ export function App(): JSX.Element {
         </button>
         <PanelButtons />
         <LayoutMenu />
-        {auth.loggedIn && (
-          <button className="chip nodrag acctchip" title={auth.email} onClick={() => set({ leftTab: 'connections' })}>
-            <span className="dot ok" /> <span className="em">{auth.email}</span>
-            {auth.subscriptionType && <span className="plan">{auth.subscriptionType}</span>}
-          </button>
-        )}
-        <button className="icon nodrag" title="Settings" onClick={() => set({ modal: { kind: 'settings' } })}>
-          <Icon d={ICON.settings} size={16} />
-        </button>
       </header>
       <main className="grid">
         <Left />

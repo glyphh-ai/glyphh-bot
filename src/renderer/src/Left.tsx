@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { connectorLabel } from '../../shared/connectors'
 import { botPanel } from '../../shared/layouts'
 import { Cat } from './Cat'
-import { api, browse, openPanel, refreshProbe, set, toast, useStore } from './store'
+import { Icon, ICON } from './Menu'
+import { api, browse, confirmAsk, openPanel, refreshProbe, set, toast, useStore } from './store'
 
 const CONNECTORS_URL = 'https://claude.ai/settings/connectors'
 
@@ -133,43 +134,17 @@ function Connections(): JSX.Element {
 
   return (
     <div className="rail-scroll">
-      <div className="rail-label">Claude</div>
-      <div className="card">
-        {auth.loggedIn ? (
-          <>
-            <div className="acct">
-              <span className="dot ok" />
-              <div>
-                <b>{auth.email}</b>
-                <small>
-                  {auth.subscriptionType ? `${auth.subscriptionType} plan` : auth.authMethod}
-                  {auth.orgName ? ` · ${auth.orgName}` : ''}
-                </small>
-              </div>
-            </div>
-            <div className="row">
-              <button className="btn" onClick={login} disabled={loggingIn}>
-                Switch account
-              </button>
-              <button
-                className="btn"
-                onClick={async () => {
-                  set({ auth: await api.auth.logout(), probe: null })
-                }}
-              >
-                Log out
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
+      {!auth.loggedIn && (
+        <>
+          <div className="rail-label">Claude</div>
+          <div className="card">
             <p className="dim">Not connected. Glyphh Bot uses your own Claude login.</p>
             <button className="btn primary" onClick={login} disabled={loggingIn}>
               {loggingIn ? 'Waiting for Claude…' : 'Connect to Claude'}
             </button>
-          </>
-        )}
-      </div>
+          </div>
+        </>
+      )}
 
       <div className="rail-label">
         Connectors
@@ -224,6 +199,83 @@ export function Left(): JSX.Element {
         </button>
       </div>
       {tab === 'bots' ? <Bots /> : <Connections />}
+      <Account />
     </aside>
+  )
+}
+
+/** The account button at the foot of the rail: its menu opens upward with the account, Settings, Switch account and Log out. */
+function Account(): JSX.Element {
+  const auth = useStore((s) => s.auth)
+  const loggingIn = useStore((s) => s.loggingIn)
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') setOpen(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [open])
+  const name = auth.email ?? 'Not connected'
+  const initial = (auth.email ?? '?').charAt(0).toUpperCase()
+  const login = (): void => {
+    setOpen(false)
+    set({ loggingIn: true, authLog: [] })
+    void api.auth.login()
+  }
+  return (
+    <div className="account">
+      {open && <div className="acc-veil" onMouseDown={() => setOpen(false)} />}
+      {open && (
+        <div className="acc-menu" role="menu">
+          <div className="acc-who">
+            <span className="acc-ava big">{initial}</span>
+            <div>
+              <b>{name}</b>
+              <small>
+                {auth.loggedIn ? (auth.subscriptionType ? `${auth.subscriptionType} plan` : auth.authMethod ?? 'Claude') : 'Glyphh Bot uses your own Claude login'}
+                {auth.orgName ? ` · ${auth.orgName}` : ''}
+              </small>
+            </div>
+          </div>
+          <hr />
+          <button
+            onClick={() => {
+              setOpen(false)
+              set({ modal: { kind: 'settings' } })
+            }}
+          >
+            <Icon d={ICON.settings} size={15} /> Settings
+          </button>
+          <button onClick={login} disabled={loggingIn}>
+            <Icon d={ICON.refresh} size={15} /> {auth.loggedIn ? 'Switch account' : 'Connect to Claude'}
+          </button>
+          {auth.loggedIn && (
+            <button
+              className="danger"
+              onClick={async () => {
+                setOpen(false)
+                const ok = await confirmAsk({
+                  title: 'Log out of Claude?',
+                  body: `Glyphh Bot stops using ${name} until you connect again.`,
+                  yes: 'Log out',
+                  danger: true
+                })
+                if (ok) set({ auth: await api.auth.logout(), probe: null })
+              }}
+            >
+              <Icon d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" size={15} /> Log out
+            </button>
+          )}
+        </div>
+      )}
+      <button className={`acc-btn ${open ? 'on' : ''}`} title={name} onClick={() => setOpen(!open)}>
+        <span className="acc-ava">{initial}</span>
+        <span className="acc-name">{name}</span>
+        {auth.subscriptionType && <span className="plan">{auth.subscriptionType}</span>}
+        <span className="acc-caret dim">▴</span>
+      </button>
+    </div>
   )
 }
