@@ -38,7 +38,7 @@ const STATUS_LABEL = { idle: '', thinking: 'working', speaking: 'talking', waiti
 
 /** Show a room in the chat (putting the chat back if another panel fills the desk). */
 function goRoom(room: string): void {
-  set({ room })
+  set({ room, commandOpen: false })
   openPanel('chat')
 }
 

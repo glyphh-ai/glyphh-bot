@@ -1,6 +1,6 @@
 # Glyphh Bot
 
-A desktop app for a crew of Claude bots. Each bot is Spike, the Glyphh cat, in its own look, voice, personality and job. They talk out loud, take turns and build things in a folder on your Mac. The chat is the center; panels (files, editor, diff, browser, a bot's own chat) open beside it only when you open them.
+A desktop app for a crew of Claude bots. Each bot is Spike, the Glyphh cat, in its own look, voice, personality and job. They talk out loud, take turns and build things in a folder on your Mac. The chat is the center; panels (files, editor, diff, browser, terminal, your web apps, a bot's own chat) open beside it only when you open them.
 
 ![The crew room](docs/1-main.png)
 
@@ -16,11 +16,15 @@ A desktop app for a crew of Claude bots. Each bot is Spike, the Glyphh cat, in i
 
 ![One closed: the rest reflow](docs/3b-panels-closed.png)
 
-**Layouts and pins.** A layout sets the frames and their sizes; a pinned frame takes every new panel. Empty frames are never drawn.
+**Layouts and pins.** A layout sets the frames and their sizes; a pinned frame takes every new panel. Empty frames are never drawn. Pick a layout from its icon on the home screen; make, edit, rename, pin and delete them in Settings → Layouts.
 
 ![A layout with a pinned frame](docs/4-layout-pinned.png)
 
 ![The Dev layout](docs/4b-dev-layout.png)
+
+**Terminal.** A login shell in the project folder (xterm and node-pty, ported from the Glyphh desktop), stacked in like any panel. Its shell ends when the panel closes. Below it, GitHub opened from its home-screen icon in a Browser panel of its own.
+
+![A terminal and an app](docs/4c-terminal-app.png)
 
 **Recents.** Past chats, pinned ones first and the rest by folder. Each row pins, archives or deletes; archived chats wait in the Archived view.
 
@@ -34,11 +38,19 @@ A desktop app for a crew of Claude bots. Each bot is Spike, the Glyphh cat, in i
 
 ![The account menu](docs/6b-account.png)
 
-**Open anything (⌘K)** and the layout manager:
+**Home (the grid icon in the top bar, or ⌘K).** Takes the chat's place like a phone's home screen: a search over everything, then pages of icons (panels, your apps, bots and layouts) with dots underneath. Swipe with two fingers, drag, or use the arrow keys to turn the page; Esc, the icon again or the Chat icon go back to the chat.
 
-![The command center](docs/7-command-center.png)
+![Home](docs/7-home.png)
 
-![The layout manager](docs/8-layout-manager.png)
+![Home, page 1 of 2](docs/7b-home-page-1.png)
+
+![Home, page 2](docs/7c-home-page-2.png)
+
+**Your apps.** Add app takes a web address and an optional name, and fetches the site's icon (its apple-touch-icon, then its favicon, else a letter tile). Each app has its own kept session, so its sign-in sticks, and opens in a new Browser panel each time. Its addresses (one or more prefixes, `*` for any part of a host, its own site by default) and "Keep redirects in the panel" decide what stays in that panel: pages, redirects, `window.open` and new windows at those addresses navigate in place (Slack's sign-in and workspace hops, or a sign-in host you add), a hand-off to the desktop app (`slack://`) is stopped, and anything else does what the Browser always does. Hover an app to edit or remove it.
+
+![Edit an app](docs/7d-app-editor.png)
+
+![Settings: layouts](docs/8-settings-layouts.png)
 
 ![The bot editor](docs/9-bot-editor.png)
 
@@ -53,7 +65,7 @@ npm start
 - **Voice**: bots speak and listen through ElevenLabs. Put your key in Settings (on Chris's Mac it falls back to the key in `glyphh/server/.env`).
 - **Bots**: left rail. Click one to talk to it in the chat, or open its own chat as a panel from the top bar's ⋮ menu or ⌘K.
 - **The Crew**: the main chat. With Swarm on, each bot takes a turn on its own git branch and opens a pull request; the strip on top shows whose turn it is and how each turn's PR went. With it off they just talk it over.
-- **Top bar**: Recents, ⌘K, the Files, Browser, Editor and Diff buttons (click again to close), ⋮ for the other panels and the bots, and the layout menu (switch, save, layout manager).
+- **Top bar**: Recents, Home (⌘K), the Files, Browser, Terminal, Editor and Diff buttons (click again to close), and ⋮ for the other panels and the bots.
 - Projects live in `~/Glyphh Bot/`. Bots, layouts, recent chats, settings and your key are stored in `~/Library/Application Support/Glyphh Bot/glyphh-bot.json`, never in this repo. Attached files go into the project's `attachments/`.
 
 ## Check it
@@ -69,8 +81,8 @@ GLYPHH_BOT_SHOT=/tmp/main.png npx electron .
 
 ## Code
 
-- `src/main`: Claude, voice, git, the workspace and its files (`files.ts`), connector icons (`icons.ts`), the data file.
-- `src/shared/layouts.ts`: frames, the panel stack and the desk's geometry. `recents.ts`: past chats. `connectors.ts`: which service a connector is. Pure data, tested in `test/`.
-- `src/renderer/src`: the UI. `Chat.tsx` the chat and composer, `md.ts` markdown, `Desk.tsx` the desk, `CommandCenter.tsx` the ⌘K sheet, `LayoutManager.tsx` the layout editor, `panels/` the panels, `engine.ts` runs the turns, `catArt.ts` draws the cats.
+- `src/main`: Claude, voice, git, the workspace and its files (`files.ts`), connector and app icons (`icons.ts`), the terminal's shells (`terminal.ts`), the data file; `index.ts` keeps each app's pages in its panel.
+- `src/shared/layouts.ts`: frames, the panel stack and the desk's geometry. `apps.ts`: your apps, their prefixes and what a panel does with a page. `paging.ts`: the home screen's pages. `recents.ts`: past chats. `connectors.ts`: which service a connector is. Pure data, tested in `test/`.
+- `src/renderer/src`: the UI. `Chat.tsx` the chat and composer, `md.ts` markdown, `Desk.tsx` the desk, `CommandCenter.tsx` the home screen, `LayoutManager.tsx` the layout editor, `panels/` the panels, `engine.ts` runs the turns, `catArt.ts` draws the cats.
 
-Ported from: the cat from Glyphh OS (`os/src/renderer/character.js`), the command center from Glyphh OS's Apps sheet, the layout grid from the Glyphh desktop (`app/src/renderer/help/workspace-grid.ts`), and the Files, Editor, Diff and Browser panels from the desktop's code workbench and `working-directory.ts`.
+Ported from: the cat from Glyphh OS (`os/src/renderer/character.js`), the command center from Glyphh OS's Apps sheet, the layout grid from the Glyphh desktop (`app/src/renderer/help/workspace-grid.ts`), and the Files, Editor, Diff, Browser and Terminal panels from the desktop's code workbench, `working-directory.ts` and `wb-terminal.ts`.

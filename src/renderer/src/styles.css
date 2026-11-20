@@ -261,7 +261,7 @@ select option { background: var(--surface); color: #fff; }
 .floor { width: min(560px, 80%); height: 1px; margin-top: 2px; background: linear-gradient(90deg, transparent, var(--rail) 20%, var(--rail) 80%, transparent); }
 .headline { margin: 26px 0 0; font: 600 44px/1.05 var(--sans); letter-spacing: -0.03em; color: #fff; }
 .sub { margin: 12px 0 20px; color: var(--text-3); font: 400 15px var(--sans); }
-.ideas { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 18px; max-width: 720px; }
+.ideas { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: 2px 0 18px; max-width: 720px; }
 .ideas button { padding: 7px 14px; border: 1px solid var(--hair); border-radius: 999px; background: var(--surface); color: var(--text-3); font: 400 13px var(--sans); }
 .ideas button:hover { color: var(--text); border-color: var(--rail); }
 
@@ -706,5 +706,59 @@ body.resizing-v webview, body.resizing-h webview { pointer-events: none; }
 .preview small { margin: 2px 0 12px; text-align: center; color: var(--text-4); font-size: 12.5px; }
 .looks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .swatches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+/* the chat's place: the chat, or the home screen over it */
+.chatwrap { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.chatwrap > .center { flex: 1; }
+
+/* the home screen: a search, pages of icons with dots, a dock */
+.home { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; padding: 26px 18px 14px; outline: none; background: radial-gradient(ellipse at 50% 0%, #141414 0%, #000 62%); }
+.home-search { flex: none; width: min(520px, 100%); height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 12px; border: 1px solid var(--hair); border-radius: 12px; background: var(--surface); color: var(--text-4); }
+.home-search:focus-within { border-color: var(--rail); }
+.home-search input { flex: 1; height: 38px; border: 0; background: none; padding: 0; font: 400 15px var(--sans); box-shadow: none; text-align: left; }
+.home-search input:focus { box-shadow: none; }
+.home-pages { flex: 1; min-height: 0; width: 100%; margin-top: 22px; overflow: hidden; position: relative; }
+.home-track { display: flex; height: 100%; transition: transform 0.32s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.home-page { flex: 0 0 100%; height: 100%; display: grid; justify-content: center; align-content: start; gap: 12px; }
+.home-none { position: absolute; inset: 30px 0 auto; text-align: center; }
+.home-tile { position: relative; width: 104px; height: 112px; }
+.home-btn { width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px; padding: 6px 2px 0; border-radius: 14px; text-align: center; min-width: 0; }
+.home-btn:hover .home-ico { border-color: var(--rail); transform: translateY(-1px); }
+.home-ico { width: 62px; height: 62px; flex: none; display: grid; place-items: center; border-radius: 16px; background: var(--surface-2); border: 1px solid var(--hair); color: #fff; overflow: hidden; transition: transform 0.12s, border-color 0.12s; }
+.home-ico .minigrid { width: 36px; height: 26px; }
+.home-ico.sm { width: 40px; height: 40px; border-radius: 11px; }
+.home-tile.k-app .home-ico { background: #fff; border-color: transparent; }
+.home-tile.k-app .home-ico:has(.letter) { background: var(--surface-3); border-color: var(--hair); }
+.home-tile.k-add .home-ico { background: transparent; border-style: dashed; border-color: var(--rail); color: var(--text-3); }
+.home-tile.k-layout .home-ico { background: var(--surface); }
+.home-name { font: 500 12.5px var(--sans); color: var(--text); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-btn small { margin-top: -5px; font: 400 10.5px var(--mono); color: var(--text-4); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-x, .home-ed { position: absolute; top: 0; width: 22px; height: 22px; display: none; place-items: center; border-radius: 50%; border: 1px solid var(--rail); background: var(--surface-3); color: #fff; font: 500 14px/1 var(--sans); z-index: 2; }
+.home-x { left: 13px; }
+.home-ed { right: 13px; }
+.home-tile:hover .home-x, .home-tile:hover .home-ed, .home-x:focus-visible, .home-ed:focus-visible { display: grid; }
+.home-x:hover { background: #fff; color: #000; }
+.home-ed:hover { background: #fff; color: #000; }
+.home-dots { flex: none; height: 22px; display: flex; align-items: center; justify-content: center; gap: 8px; }
+.home-dots button { width: 7px; height: 7px; padding: 0; border-radius: 50%; background: var(--rail); }
+.home-dots button.on { background: #fff; }
+.home-dock { flex: none; display: flex; justify-content: center; gap: 6px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--hair); border-radius: 18px; background: rgba(20, 20, 20, 0.8); }
+.home-dockbtn { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 84px; padding: 4px; border-radius: 10px; font: 400 11px var(--sans); color: var(--text-3); }
+.home-dockbtn:hover { color: #fff; background: var(--surface-2); }
+.appicon { display: block; border-radius: 0; object-fit: contain; }
+.home-ico > .appicon { width: 100%; height: 100%; object-fit: cover; }
+.dhead .appicon { border-radius: 4px; background: #fff; }
+.appicon.letter { display: grid; place-items: center; font-family: var(--sans); font-weight: 600; color: #fff; background: var(--surface-3); border-radius: 4px; }
+.home-ico > .appicon.letter { background: none; }
+.modal.appedit { width: 520px; }
+.modal.appedit textarea { width: 100%; font: 400 12.5px var(--mono); resize: vertical; }
+.modal.appedit .err { color: #fff; border-left: 2px solid var(--rail); padding-left: 8px; }
+.lm-list.in-settings { padding: 0; }
+
+/* the Terminal panel */
+.pane.term { flex: 1; min-height: 0; display: flex; background: #000; padding: 6px 0 0 8px; }
+.termhost { flex: 1; min-width: 0; min-height: 0; }
+.termhost .xterm { height: 100%; }
+.termhost .xterm-viewport { background: #000 !important; }
 
 .toast { position: absolute; bottom: 46px; left: 50%; transform: translateX(-50%); z-index: 99; max-width: 560px; padding: 10px 16px; border: 1px solid var(--rail); border-radius: var(--radius); background: var(--surface-2); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8); font: 400 13px var(--sans); animation: rise 0.25s; cursor: pointer; }

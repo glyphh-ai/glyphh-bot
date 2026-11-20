@@ -12,8 +12,10 @@ import {
 import { normalizeCurrent, removeLayout, saveLayout, type Layout, type SavedLayout } from '../shared/layouts'
 import { normalizeLook, type Bot, type PermissionDecision, type RunParams, type Settings, type SettingsView, type Voice } from '../shared/types'
 import { normalizeRecents, removeRecent, setArchivedRecent, setPinnedRecent, upsertRecent, type Recent } from '../shared/recents'
+import { decide, makeApp, partitionOf, removeApp, upsertApp, type AppInput, type WebApp } from '../shared/apps'
 import * as claude from './claude'
-import { connectorIcon } from './icons'
+import { appIcon, connectorIcon } from './icons'
+import * as terminal from './terminal'
 import { load, update } from './store'
 import * as voice from './voice'
 import * as ws from './workspace'
@@ -80,6 +82,8 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R |
 }
 
 app.setName('Glyphh Bot')
+// Screenshot runs draw at 1x so the pictures are the window's real size.
+if (process.env.GLYPHH_BOT_SHOT) app.commandLine.appendSwitch('force-device-scale-factor', '1')
 
 app.whenReady().then(() => {
   // The only permission the app's own pages need is the microphone.
@@ -183,6 +187,23 @@ app.whenReady().then(() => {
   handle('git:diff', (id: number) => ws.diff(id))
   handle('git:branch', () => ws.branch())
 
+  handle('apps:list', () => load().apps)
+  // Saving an app with a new address (or no icon yet) fetches its icon first.
+  handle('apps:save', async (input: AppInput & { id?: string }) => {
+    const id = input.id || Math.random().toString(36).slice(2, 10)
+    const old = load().apps.find((a) => a.id === id)
+    const draft = makeApp(input, id, old?.icon ?? null)
+    if (!draft) throw new Error('That is not a web address.')
+    if (!old || old.url !== draft.url || !old.icon) draft.icon = await appIcon(draft.url)
+    return update((d) => (d.apps = upsertApp(d.apps, draft))).apps
+  })
+  handle('apps:remove', (id: string) => update((d) => (d.apps = removeApp(d.apps, id))).apps)
+
+  ipcMain.handle('term:spawn', async (e, id: string, cols: number, rows: number) => terminal.spawn(e.sender, id, (await ws.current()).path, cols, rows))
+  ipcMain.on('term:write', (_e, id: string, data: string) => terminal.write(id, data))
+  ipcMain.on('term:resize', (_e, id: string, cols: number, rows: number) => terminal.resize(id, cols, rows))
+  ipcMain.on('term:kill', (_e, id: string) => terminal.kill(id))
+
   handle('openExternal', (url: string) => {
     if (/^https?:\/\//.test(url)) return shell.openExternal(url)
   })
@@ -206,15 +227,43 @@ app.on('web-contents-created', (_e, contents) => {
     contents.on('will-navigate', (ev, url) => {
       if (url !== contents.getURL()) ev.preventDefault()
     })
-  } else {
+  } else if (contents.getType() === 'webview') {
+    // An app's panel (its own persist:app-<id> session) keeps the app's own
+    // pages: a new window inside its prefixes loads in place; one outside
+    // them opens in the Browser panel. Plain Browser pages load new windows
+    // in place, as before.
     contents.setWindowOpenHandler(({ url }) => {
-      if (/^https?:/.test(url)) void contents.loadURL(url)
+      if (!/^https?:/.test(url)) return { action: 'deny' }
+      const owner = appOf(contents)
+      if (!owner || decide(owner, url, 'window') === 'stay') void contents.loadURL(url)
+      else contents.hostWebContents?.send('browser:open', url)
       return { action: 'deny' }
     })
+    // Navigations and redirects inside the prefixes go ahead in the panel, as
+    // do ones outside them (the current behaviour); a redirect that hands the
+    // page to a desktop app (slack://...) is stopped so the panel keeps it.
+    const keep = (kind: 'navigate' | 'redirect') => (ev: Electron.Event, url: string) => {
+      if (decide(appOf(contents), url, kind) === 'block') ev.preventDefault()
+    }
+    contents.on('will-navigate', keep('navigate'))
+    contents.on('will-redirect', keep('redirect'))
   }
 })
 
-app.on('before-quit', () => claude.stopAll())
+/** The app whose panel a webview is, by its session; null for the plain Browser. */
+function appOf(contents: Electron.WebContents): WebApp | null {
+  const path = contents.session.storagePath
+  for (const a of load().apps) {
+    const s = session.fromPartition(partitionOf(a.id))
+    if (s === contents.session || (path && s.storagePath === path)) return a
+  }
+  return null
+}
+
+app.on('before-quit', () => {
+  claude.stopAll()
+  terminal.killAll()
+})
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })

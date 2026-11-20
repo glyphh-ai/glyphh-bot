@@ -6,42 +6,47 @@
 // panel. Every panel is placed absolutely from deskRects and rendered in a
 // stable order, so a reflow never remounts a browser or an editor.
 import { useEffect, useRef, useState } from 'react'
-import {
-  allLayouts,
-  botOfPanel,
-  CHAT,
-  cloneLayout,
-  deskRects,
-  evenFractions,
-  findLayout,
-  frameSeams,
-  moveSeam,
-  sameShape,
-  toSaved,
-  type Rect
-} from '../../shared/layouts'
+import { appOfPanel, botOfPanel, CHAT, cloneLayout, deskRects, evenFractions, frameSeams, moveSeam, type Rect } from '../../shared/layouts'
+import { AppIcon } from './AppIcon'
 import { Cat } from './Cat'
 import { Chat } from './Chat'
-import { MiniGrid } from './LayoutManager'
+import { CommandCenter } from './CommandCenter'
 import { Icon, ICON } from './Menu'
 import { BrowserPanel } from './panels/Browser'
+import { TerminalPanel } from './panels/Terminal'
 import { DiffPanel } from './panels/Diff'
 import { EditorPanel } from './panels/Editor'
 import { FilesPanel } from './panels/Files'
 import { PANEL_ICON, panelTitle } from './panelInfo'
-import { closePanel, get, openCommand, openPanel, set, setLayout, switchLayout, toggleExpand, togglePin, useStore } from './store'
+import { closePanel, get, openPanel, set, setLayout, toggleExpand, togglePin, useStore } from './store'
 
 function PanelIcon({ panelId }: { panelId: string }): JSX.Element {
   const botId = botOfPanel(panelId)
+  const appId = appOfPanel(panelId)
   const bot = useStore((s) => (botId ? s.bots.find((b) => b.id === botId) : undefined))
+  const app = useStore((s) => (appId ? s.apps.find((a) => a.id === appId) : undefined))
   if (bot) return <Cat look={bot.look} size={18} />
-  return <Icon d={PANEL_ICON[panelId] ?? ICON.layout} size={14} />
+  if (app) return <AppIcon app={app} size={16} />
+  return <Icon d={PANEL_ICON[panelId] ?? (appId ? ICON.browser : ICON.layout)} size={14} />
 }
 
 function Panel({ panelId }: { panelId: string }): JSX.Element {
   const botId = botOfPanel(panelId)
+  const appId = appOfPanel(panelId)
+  const app = useStore((s) => (appId ? s.apps.find((a) => a.id === appId) : undefined))
   if (botId) return <Chat room={botId} />
+  if (appId) {
+    if (app) return <BrowserPanel app={app} />
+    return (
+      <div className="empty">
+        <b>This app was removed</b>
+        <p>Add it again from the home screen.</p>
+      </div>
+    )
+  }
   switch (panelId) {
+    case 'terminal':
+      return <TerminalPanel />
     case 'files':
       return <FilesPanel />
     case 'editor':
@@ -62,60 +67,6 @@ function Panel({ panelId }: { panelId: string }): JSX.Element {
 
 const pct = (r: Rect): React.CSSProperties => ({ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` })
 
-/** The top bar's layout menu: switch layouts, save the one on screen, or open the manager. */
-export function LayoutMenu(): JSX.Element {
-  const layout = useStore((s) => s.layout)
-  const saved = useStore((s) => s.layouts)
-  const [open, setOpen] = useState(false)
-  const all = allLayouts(saved)
-  const stored = findLayout(saved, layout.name)
-  const changed = !stored || !sameShape(toSaved(layout), stored)
-  return (
-    <div className="lmenu nodrag">
-      <div>
-        <button className="chip" onClick={() => setOpen(!open)} title="Layout: switch, save, or open the layout manager">
-          <Icon d={ICON.layout} size={14} /> {layout.name}
-          {changed && <span className="dim">·</span>} <span className="dim">▾</span>
-        </button>
-        {open && (
-          <div className="menu" onMouseLeave={() => setOpen(false)}>
-            {all.map((l) => (
-              <button
-                key={l.name}
-                className={l.name === layout.name ? 'on' : ''}
-                onClick={() => {
-                  setOpen(false)
-                  switchLayout(l.name)
-                }}
-              >
-                <MiniGrid l={l} />
-                {l.name}
-              </button>
-            ))}
-            <hr />
-            <button
-              onClick={() => {
-                setOpen(false)
-                set({ modal: { kind: 'layouts', edit: toSaved(layout), fromScreen: true } })
-              }}
-            >
-              Save this layout…
-            </button>
-            <button
-              onClick={() => {
-                setOpen(false)
-                set({ modal: { kind: 'layouts' } })
-              }}
-            >
-              Layout manager…
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
 /** Drop data: a panel tile from the command center, or a panel's header. */
 const PANEL_DRAG = 'text/gb-panel'
 const CHAT_MIN_PX = 420
@@ -125,7 +76,9 @@ export function Desk(): JSX.Element {
   const focused = useStore((s) => s.focused)
   const flash = useStore((s) => s.flash)
   const expanded = useStore((s) => s.expanded)
+  const home = useStore((s) => s.commandOpen)
   useStore((s) => s.bots)
+  useStore((s) => s.apps)
   useStore((s) => s.room)
   const body = useRef<HTMLDivElement>(null)
   const [over, setOver] = useState<number | null>(null)
@@ -187,12 +140,16 @@ export function Desk(): JSX.Element {
       <div className="dbodyw" ref={body}>
         {/* the chat */}
         <div className={`dslot chatslot ${focused === CHAT ? 'focus' : ''}`} style={r.chat ? pct(r.chat) : { display: 'none' }} onMouseDownCapture={() => focused !== CHAT && set({ focused: CHAT })}>
-          {(area || expanded === CHAT) && (
+          {(area || expanded === CHAT) && !home && (
             <button className="ibtn dexpand" title={expanded === CHAT ? 'Put it back' : 'Fill the window'} onClick={() => toggleExpand(CHAT)}>
               <Icon d={expanded === CHAT ? ICON.shrink : ICON.grow} size={14} />
             </button>
           )}
-          <Chat />
+          {/* the home screen takes the chat's place; the chat stays mounted underneath */}
+          <div className="chatwrap" style={home ? { display: 'none' } : undefined}>
+            <Chat />
+          </div>
+          {home && <CommandCenter />}
         </div>
 
         {/* frames holding open panels: their outline when pinned or dragged over (empty frames are never drawn) */}

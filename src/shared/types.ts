@@ -1,4 +1,5 @@
 // Types shared by the main process, the preload bridge and the renderer.
+import type { AppInput, WebApp } from './apps'
 import type { Layout, SavedLayout } from './layouts'
 import type { Recent } from './recents'
 
@@ -324,6 +325,22 @@ export interface GlyphhBotApi {
     current(): Promise<Layout | null>
     setCurrent(layout: Layout): Promise<void>
   }
+  apps: {
+    list(): Promise<WebApp[]>
+    /** Adds (no id) or edits an app; a new address fetches its icon. */
+    save(input: AppInput & { id?: string }): Promise<WebApp[]>
+    remove(id: string): Promise<WebApp[]>
+  }
+  term: {
+    spawn(id: string, cols: number, rows: number): Promise<void>
+    write(id: string, data: string): void
+    resize(id: string, cols: number, rows: number): void
+    kill(id: string): void
+    onData(id: string, cb: (data: string) => void): () => void
+    onExit(id: string, cb: (code: number) => void): () => void
+  }
+  /** A page an app's panel sent out (a new window outside its prefixes): the Browser opens it. */
+  onBrowserOpen(cb: (url: string) => void): () => void
   openExternal(url: string): Promise<void>
   /** True only in a GLYPHH_BOT_SHOT run, so the screenshot script can set the scene. */
   shot: boolean

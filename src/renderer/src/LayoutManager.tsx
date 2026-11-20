@@ -29,6 +29,7 @@ import {
   setPinned,
   SHAPES,
   splitFrame,
+  toSaved,
   withPanels,
   type Grid,
   type SavedLayout
@@ -260,25 +261,47 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
   )
 }
 
-export function LayoutManager({ edit, fromScreen }: { edit?: SavedLayout | null; fromScreen?: boolean }): JSX.Element {
+export function LayoutManager({
+  edit,
+  fromScreen,
+  copy,
+  back,
+  fresh
+}: {
+  /** Start a new, empty layout. */
+  fresh?: boolean
+  edit?: SavedLayout | null
+  fromScreen?: boolean
+  /** Start a new layout from this one, named "<name> copy". */
+  copy?: boolean
+  /** Opened from Settings: closing and Cancel go back there. */
+  back?: boolean
+}): JSX.Element {
   const saved = useStore((s) => s.layouts)
   const current = useStore((s) => s.layout.name)
   const [draft, setDraft] = useState<Draft | null>(() =>
-    edit ? draftOf(edit, !!fromScreen && !isBuiltin(edit.name) && saved.some((l) => l.name === edit.name)) : null
+    fresh
+      ? { name: '', grid: emptyGrid(2, 1) }
+      : edit
+      ? copy
+        ? { ...draftOf(edit, false), name: `${edit.name} copy` }
+        : draftOf(edit, !!fromScreen && !isBuiltin(edit.name) && saved.some((l) => l.name === edit.name))
+      : null
   )
   const all = allLayouts(saved)
+  const leave = (): void => set({ modal: back ? { kind: 'settings' } : null })
 
   return (
-    <div className="veil" onMouseDown={(e) => e.target === e.currentTarget && set({ modal: null })}>
+    <div className="veil" onMouseDown={(e) => e.target === e.currentTarget && leave()}>
       <div className="modal wide">
         <div className="modal-head">
           <h2>{draft ? (draft.replacing ? `Edit ${draft.replacing}` : 'New layout') : 'Layouts'}</h2>
-          <button className="icon" onClick={() => set({ modal: null })}>
+          <button className="icon" onClick={leave}>
             ×
           </button>
         </div>
         {draft ? (
-          <Editor draft={draft} onDone={() => setDraft(null)} />
+          <Editor draft={draft} onDone={() => (back ? leave() : setDraft(null))} />
         ) : (
           <div className="lm-list">
             {all.map((l) => {
@@ -329,6 +352,61 @@ export function LayoutManager({ edit, fromScreen }: { edit?: SavedLayout | null;
             </div>
           </div>
         )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Settings → Layouts: make, edit, rename, copy and delete layouts, and set
+ * their pins (in the editor). Choosing one to put on screen is the home
+ * screen's job.
+ */
+export function LayoutSettings(): JSX.Element {
+  const saved = useStore((s) => s.layouts)
+  const layout = useStore((s) => s.layout)
+  const all = allLayouts(saved)
+  const open = (m: { edit?: SavedLayout; fromScreen?: boolean; copy?: boolean }): void => set({ modal: { kind: 'layouts', back: true, ...m } })
+  return (
+    <div className="lm-list in-settings">
+      {all.map((l) => {
+        const mine = !isBuiltin(l.name)
+        const pinned = l.frames.some((f) => f.pinned)
+        return (
+          <div key={l.name} className={`lm-row ${l.name === layout.name ? 'on' : ''}`}>
+            <MiniGrid l={l} />
+            <div className="lm-main">
+              <b>{l.name}</b>
+              <small>
+                {mine ? 'yours' : 'built in'} · {l.frames.length} {l.frames.length === 1 ? 'frame' : 'frames'}
+                {pinned ? ' · one pinned' : ''}
+                {l.name === layout.name ? ' · on screen' : ''}
+              </small>
+            </div>
+            <button className="btn" onClick={() => open(mine ? { edit: l, fromScreen: true } : { edit: l, copy: true })}>
+              {mine ? 'Edit' : 'Copy'}
+            </button>
+            {mine && (
+              <button
+                className="btn danger"
+                onClick={async () => {
+                  if (!(await confirmAsk({ title: `Delete ${l.name}?`, body: 'The layout goes. Your files and bots stay.', yes: 'Delete', danger: true }))) return
+                  set({ layouts: await api.layouts.remove(l.name) })
+                }}
+              >
+                Delete
+              </button>
+            )}
+          </div>
+        )
+      })}
+      <div className="row end">
+        <button className="btn" onClick={() => open({ edit: toSaved(layout), fromScreen: true })}>
+          Save the one on screen…
+        </button>
+        <button className="btn primary" onClick={() => set({ modal: { kind: 'layouts', back: true, fresh: true } })}>
+          + New layout
+        </button>
       </div>
     </div>
   )

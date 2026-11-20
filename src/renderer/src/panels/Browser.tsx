@@ -8,6 +8,7 @@ import { createElement, useEffect, useRef, useState } from 'react'
 import { Icon, ICON } from '../Menu'
 import { api, useStore } from '../store'
 import { toUrl } from '../../../shared/url'
+import { partitionOf, type WebApp } from '../../../shared/apps'
 
 interface WebviewEl extends HTMLElement {
   src: string
@@ -38,7 +39,21 @@ const titleOf = (t: Tab): string => {
   }
 }
 
-function Page({ tab, show, onNav, onFail }: { tab: Tab; show: boolean; onNav: (url: string, title?: string) => void; onFail: (msg: string) => void }): JSX.Element {
+function Page({
+  tab,
+  show,
+  partition,
+  popups,
+  onNav,
+  onFail
+}: {
+  tab: Tab
+  show: boolean
+  partition: string
+  popups: boolean
+  onNav: (url: string, title?: string) => void
+  onFail: (msg: string) => void
+}): JSX.Element {
   const ref = useRef<WebviewEl>(null)
   // The first page only: later pages load through loadURL, so a navigation
   // never echoes back into src and reloads the page.
@@ -67,7 +82,7 @@ function Page({ tab, show, onNav, onFail }: { tab: Tab; show: boolean; onNav: (u
   }, [])
   return (
     <div className="webwrap" style={{ display: show ? 'flex' : 'none' }}>
-      {createElement('webview', { ref, src: first, className: 'web', partition: 'persist:glyphh-bot', 'data-tab': tab.id })}
+      {createElement('webview', { ref, src: first, className: 'web', partition, ...(popups ? { allowpopups: 'true' } : {}), 'data-tab': tab.id })}
       {tab.error && (
         <div className="weberr">
           <b>This page did not load</b>
@@ -81,8 +96,15 @@ function Page({ tab, show, onNav, onFail }: { tab: Tab; show: boolean; onNav: (u
   )
 }
 
-export function BrowserPanel(): JSX.Element {
-  const start = useStore((s) => s.browserUrl)
+/**
+ * The Browser, or one of your apps: an app's panel starts on the app's page
+ * in the app's own session (persist:app-<id>, so its sign-in sticks), and the
+ * main process keeps the app's own pages in it (shared/apps.ts decide).
+ */
+export function BrowserPanel({ app }: { app?: WebApp }): JSX.Element {
+  const asked0 = useStore((s) => s.browserUrl)
+  const start = app ? app.url : asked0
+  const partition = app ? partitionOf(app.id) : 'persist:glyphh-bot'
   const ws = useStore((s) => s.ws)
   const [tabs, setTabs] = useState<Tab[]>(() => [{ id: nextId++, url: start, title: '' }])
   const [active, setActive] = useState(tabs[0]!.id)
@@ -181,9 +203,11 @@ export function BrowserPanel(): JSX.Element {
         >
           <Icon d={ICON.folder} />
         </button>
-        <button className="btn tiny" title="Open the project's index.html" onClick={() => ws && go(`file://${ws.path}/index.html`)}>
-          Preview
-        </button>
+        {!app && (
+          <button className="btn tiny" title="Open the project's index.html" onClick={() => ws && go(`file://${ws.path}/index.html`)}>
+            Preview
+          </button>
+        )}
       </div>
       <div className="webviews" ref={views}>
         {tabs.map((t) =>
@@ -192,6 +216,8 @@ export function BrowserPanel(): JSX.Element {
               key={t.id}
               tab={t}
               show={t.id === tab.id}
+              partition={partition}
+              popups={!!app}
               onNav={(url, title) => {
                 patch(t.id, { url, ...(title ? { title } : {}), error: undefined })
                 if (t.id === active && document.activeElement?.tagName !== 'INPUT') setBar(url)

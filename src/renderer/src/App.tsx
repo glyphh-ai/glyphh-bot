@@ -3,8 +3,8 @@ import { botPanel, frameOf, PANELS } from '../../shared/layouts'
 import { archivedRecents, groupRecents, type Recent } from '../../shared/recents'
 import logo from './assets/glyphh-logo-text-white.png'
 import { Cat } from './Cat'
-import { CommandCenter, startCommandKey } from './CommandCenter'
-import { Desk, LayoutMenu } from './Desk'
+import { startCommandKey } from './CommandCenter'
+import { Desk } from './Desk'
 import { startEvents } from './engine'
 import { StatusBar } from './Hud'
 import { LayoutManager } from './LayoutManager'
@@ -27,6 +27,7 @@ import {
   reopenRecent,
   set,
   toast,
+  toggleHome,
   useStore,
   why
 } from './store'
@@ -78,7 +79,7 @@ function WorkspaceMenu(): JSX.Element {
 }
 
 /** The top bar's panel buttons: each opens its panel (or focuses it), or closes it when it is open. */
-const QUICK = ['files', 'browser', 'editor', 'diff'] as const
+const QUICK = ['files', 'browser', 'terminal', 'editor', 'diff'] as const
 
 function PanelButtons(): JSX.Element {
   const layout = useStore((s) => s.layout)
@@ -116,7 +117,7 @@ function PanelButtons(): JSX.Element {
           items={[
             ...others.map((p) => ({ label: `${isOpen(p.id) ? '✓ ' : ''}${p.label}`, onPick: () => openPanel(p.id) })),
             ...bots.map((b) => ({ label: `${isOpen(botPanel(b.id)) ? '✓ ' : ''}${b.name}'s chat`, onPick: () => openPanel(botPanel(b.id)) })),
-            { label: 'Open anything… (⌘K)', onPick: () => openCommand(null) }
+            { label: 'Home (⌘K)', onPick: () => openCommand(null) }
           ]}
         />
       )}
@@ -275,7 +276,7 @@ export function App(): JSX.Element {
   const auth = useStore((s) => s.auth)
   const modal = useStore((s) => s.modal)
   const toastText = useStore((s) => s.toast)
-  const commandOpen = useStore((s) => s.commandOpen)
+  const home = useStore((s) => s.commandOpen)
 
   useEffect(() => {
     if (api.shot) window.__shot = store
@@ -300,11 +301,10 @@ export function App(): JSX.Element {
         <WorkspaceMenu />
         <RecentsMenu />
         <div className="spacer" />
-        <button className="chip nodrag search" title="Open a panel or a bot (⌘K)" onClick={() => openCommand(null)}>
-          <Icon d={ICON.open} size={14} /> Open <kbd>⌘K</kbd>
+        <button className={`icon nodrag homebtn ${home ? 'on' : ''}`} title={home ? 'Back to the chat (Esc)' : 'Home: apps, panels, bots and layouts (⌘K)'} onClick={toggleHome}>
+          <Icon d={ICON.home} size={16} />
         </button>
         <PanelButtons />
-        <LayoutMenu />
       </header>
       <main className="grid">
         <Left />
@@ -314,8 +314,7 @@ export function App(): JSX.Element {
       {ready && !auth.loggedIn && <LoginGate />}
       {modal?.kind === 'settings' && <SettingsModal />}
       {modal?.kind === 'bot' && <BotEditor bot={modal.bot} />}
-      {modal?.kind === 'layouts' && <LayoutManager edit={modal.edit} fromScreen={modal.fromScreen} />}
-      {commandOpen && <CommandCenter />}
+      {modal?.kind === 'layouts' && <LayoutManager edit={modal.edit} fromScreen={modal.fromScreen} copy={modal.copy} back={modal.back} fresh={modal.fresh} />}
       <ConfirmModal />
       {toastText && (
         <div className="toast" onClick={() => set({ toast: '' })}>

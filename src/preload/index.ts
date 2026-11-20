@@ -85,6 +85,20 @@ const api: GlyphhBotApi = {
     current: call('layouts:current'),
     setCurrent: call('layouts:setCurrent')
   },
+  apps: {
+    list: call('apps:list'),
+    save: call('apps:save'),
+    remove: call('apps:remove')
+  },
+  term: {
+    spawn: call('term:spawn'),
+    write: (id, data) => ipcRenderer.send('term:write', id, data),
+    resize: (id, cols, rows) => ipcRenderer.send('term:resize', id, cols, rows),
+    kill: (id) => ipcRenderer.send('term:kill', id),
+    onData: (id, cb) => on<string>(`term:data:${id}`, cb),
+    onExit: (id, cb) => on<number>(`term:exit:${id}`, cb)
+  },
+  onBrowserOpen: (cb) => on<string>('browser:open', cb),
   openExternal: call('openExternal'),
   shot: new URLSearchParams(location.search).has('shot')
 }

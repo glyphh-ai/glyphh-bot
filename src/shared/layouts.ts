@@ -31,14 +31,28 @@ export const PANELS: ReadonlyArray<{ id: PanelId; label: string }> = Object.free
   { id: 'files', label: 'Files' },
   { id: 'editor', label: 'Editor' },
   { id: 'diff', label: 'Diff' },
-  { id: 'browser', label: 'Browser' }
+  { id: 'browser', label: 'Browser' },
+  { id: 'terminal', label: 'Terminal' }
 ])
 
 export const botPanel = (botId: string): PanelId => `bot:${botId}`
 export const botOfPanel = (panelId: PanelId): string | null => (panelId.startsWith('bot:') ? panelId.slice(4) : null)
 
+/** One of your apps in a Browser panel of its own: web:<app id>:<n>, a new one each time it opens. */
+export const webPanel = (appId: string, n: number): PanelId => `web:${appId}:${n}`
+export const appOfPanel = (panelId: PanelId): string | null => /^web:([^:]+):\d+$/.exec(panelId)?.[1] ?? null
+
+/** A panel id for an app that no panel in the layout uses yet. */
+export function freshWebPanel(l: Grid, appId: string): PanelId {
+  const used = new Set(l.frames.flatMap((f) => f.stack))
+  let n = 1
+  while (used.has(webPanel(appId, n))) n++
+  return webPanel(appId, n)
+}
+
 /** A panel this app has (old saved data may name ones it no longer has, like the Swarm panel). */
-export const isPanel = (id: PanelId): boolean => PANELS.some((p) => p.id === id) || (id.startsWith('bot:') && id.length > 4)
+export const isPanel = (id: PanelId): boolean =>
+  PANELS.some((p) => p.id === id) || (id.startsWith('bot:') && id.length > 4) || appOfPanel(id) !== null
 
 /** One frame of the panel area. */
 export interface Frame {

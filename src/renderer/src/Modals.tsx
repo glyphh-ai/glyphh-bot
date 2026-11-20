@@ -3,6 +3,7 @@ import type { Bot, Look } from '../../shared/types'
 import { ACCESSORIES, EXTRAS, EYES, HEADS, POSES, TAILS } from '../../shared/types'
 import logo from './assets/glyphh-logo-text-white.png'
 import { PART_NAMES } from './catArt'
+import { LayoutSettings } from './LayoutManager'
 import { Cat, randomLook } from './Cat'
 import { api, confirmAsk, get, refreshProbe, set, setSettings, toast, uid, useStore, why } from './store'
 import { speak } from './voice'
@@ -168,6 +169,10 @@ export function SettingsModal(): JSX.Element {
             <option value="eleven_multilingual_v2">Multilingual 2 (richest)</option>
           </select>
         </label>
+
+        <h3>Layouts</h3>
+        <small className="dim">Make, edit, rename and delete layouts, and pin the frame new panels go into. Put one on screen from the home screen.</small>
+        <LayoutSettings />
 
         <h3>Swarm</h3>
         <label className="check">

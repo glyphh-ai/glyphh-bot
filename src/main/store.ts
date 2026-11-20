@@ -1,6 +1,7 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { normalizeApps, type WebApp } from '../shared/apps'
 import { normalizeCurrent, normalizeSaved, type Layout, type SavedLayout } from '../shared/layouts'
 import { normalizeRecents, type Recent } from '../shared/recents'
 import { normalizeLook, type Bot, type Settings } from '../shared/types'
@@ -16,6 +17,8 @@ interface Data {
   layout: Layout | null
   /** Past chats, with their pins and archives. */
   recents: Recent[]
+  /** Web pages you added to the home screen. */
+  apps: WebApp[]
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -135,7 +138,8 @@ export function load(): Data {
     workspace: saved.workspace ?? '',
     layouts: normalizeSaved(saved.layouts),
     layout: normalizeCurrent(saved.layout),
-    recents: normalizeRecents(saved.recents)
+    recents: normalizeRecents(saved.recents),
+    apps: normalizeApps(saved.apps)
   }
   return data
 }

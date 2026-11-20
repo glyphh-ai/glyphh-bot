@@ -843,7 +843,6 @@ export function Chat({ room: fixed }: { room?: string }): JSX.Element {
           <div className="floor" />
           <h1 className="headline">{room === 'crew' ? 'What are we making?' : `This is ${bot?.name}.`}</h1>
           <p className="sub">{room === 'crew' ? 'Say it or type it. The crew takes turns, out loud.' : bot?.tagline}</p>
-          <Composer hero room={room} />
           {room === 'crew' && (
             <div className="ideas">
               {IDEAS.map((t) => (
@@ -853,6 +852,7 @@ export function Chat({ room: fixed }: { room?: string }): JSX.Element {
               ))}
             </div>
           )}
+          <Composer hero room={room} />
         </div>
       ) : (
         <>

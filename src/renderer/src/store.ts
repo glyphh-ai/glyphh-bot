@@ -8,6 +8,7 @@ import {
   openLayout,
   openPanel as openIn,
   openPanels,
+  freshWebPanel,
   setPinned,
   cloneLayout,
   withPanels,
@@ -16,6 +17,7 @@ import {
   type SavedLayout
 } from '../../shared/layouts'
 import { titleFrom, type Recent } from '../../shared/recents'
+import type { AppInput, WebApp } from '../../shared/apps'
 import type {
   Attachment,
   AuthStatus,
@@ -109,7 +111,7 @@ export type Modal =
   | null
   | { kind: 'settings' }
   | { kind: 'bot'; bot: Bot | null }
-  | { kind: 'layouts'; edit?: SavedLayout | null; fromScreen?: boolean }
+  | { kind: 'layouts'; edit?: SavedLayout | null; fromScreen?: boolean; copy?: boolean; back?: boolean; fresh?: boolean }
 
 interface State {
   ready: boolean
@@ -156,7 +158,10 @@ interface State {
   flash: PanelId | null
   /** The panel filling the whole desk, or null. */
   expanded: PanelId | null
+  /** The home screen (the command center) is on screen in the chat's place. */
   commandOpen: boolean
+  /** Web pages you added to the home screen. */
+  apps: WebApp[]
   /** The frame the command center opens into, or null for wherever the stack puts it. */
   commandTarget: number | null
 }
@@ -213,6 +218,7 @@ export const useStore = create<State>(() => ({
   flash: null,
   expanded: null,
   commandOpen: false,
+  apps: [],
   commandTarget: null
 }))
 
@@ -410,7 +416,7 @@ export async function newChat(room = get().room): Promise<void> {
   set((s) => {
     const chatId = { ...s.chatId }
     delete chatId[room]
-    return { msgs: { ...s.msgs, [room]: [] }, chatId, room }
+    return { msgs: { ...s.msgs, [room]: [] }, chatId, room, commandOpen: false }
   })
   const bot = get().bots.find((b) => b.id === room)
   if (bot?.sessionId) set({ bots: await api.bots.save({ ...bot, sessionId: undefined }) })
@@ -431,7 +437,8 @@ export async function reopenRecent(r: Recent): Promise<void> {
     msgs: { ...st.msgs, [r.room]: (r.msgs as Msg[]).map((m) => ({ ...m, streaming: false })) },
     chatId: { ...st.chatId, [r.room]: r.id },
     room: r.room,
-    focused: CHAT
+    focused: CHAT,
+    commandOpen: false
   }))
   const bot = get().bots.find((b) => b.id === r.room)
   if (bot && bot.sessionId !== r.sessionId) set({ bots: await api.bots.save({ ...bot, sessionId: r.sessionId }) })
@@ -472,9 +479,45 @@ export function togglePin(frame: number): void {
   setLayout(l)
 }
 
-/** Open the command center; `target` is the frame it opens into, or null for wherever the stack puts it. */
+/** Show the home screen in the chat's place; `target` is the frame what it opens goes into, or null for wherever the stack puts it. */
 export function openCommand(target: number | null = null): void {
-  set({ commandOpen: true, commandTarget: target })
+  set((s) => ({ commandOpen: true, commandTarget: target, expanded: s.expanded === CHAT ? s.expanded : null, focused: CHAT }))
+}
+
+/** Back from the home screen to the chat. */
+export function closeHome(): void {
+  set({ commandOpen: false, commandTarget: null })
+}
+
+export const toggleHome = (): void => (get().commandOpen ? closeHome() : openCommand(null))
+
+// ------------------------------------------------------------- apps
+
+/** Open one of your apps in a new Browser panel of its own, stacked in like any panel (a pinned frame takes it). */
+export function openApp(app: WebApp, into?: number): void {
+  openPanel(freshWebPanel(get().layout, app.id), into)
+}
+
+/** Add an app (no id) or change one; its icon is fetched when its address is new. */
+export async function saveApp(input: AppInput & { id?: string }): Promise<WebApp[]> {
+  const apps = await api.apps.save(input)
+  set({ apps })
+  return apps
+}
+
+/** Remove an app after the shared confirm; its open panels close. */
+export async function removeApp(app: WebApp): Promise<void> {
+  const ok = await confirmAsk({
+    title: `Remove ${app.name}?`,
+    body: 'It comes off the home screen and its open panels close. Its sign-in stays on this computer.',
+    yes: 'Remove',
+    danger: true
+  })
+  if (!ok) return
+  let l = get().layout
+  for (const p of openPanels(l)) if (p.startsWith(`web:${app.id}:`)) l = closeIn(l, p)
+  setLayout(l)
+  set({ apps: await api.apps.remove(app.id) })
 }
 
 export async function boot(): Promise<void> {
@@ -491,6 +534,12 @@ export async function boot(): Promise<void> {
     .list()
     .then((recents) => set({ recents }))
     .catch(() => undefined)
+  api.apps
+    .list()
+    .then((apps) => set({ apps }))
+    .catch(() => undefined)
+  // A new window an app's panel sent out (outside the app's prefixes) opens in the Browser.
+  api.onBrowserOpen((url) => browse(url))
   void refreshFiles()
   if (settings.elevenKeySource !== 'none') {
     api.voice
