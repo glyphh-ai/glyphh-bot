@@ -1,30 +1,15 @@
+// The chat, the app's center. The crew room or one
+// bot's direct chat, with the bubbles, tool calls, permission questions, pull
+// request cards and the voice composer. A layout can hold several: the main
+// Chat panel follows the room picked in the left rail, a bot panel is fixed.
 import { useEffect, useRef, useState } from 'react'
 import type { Bot, PermissionMode } from '../../shared/types'
+import { Cat } from './Cat'
 import { answer, decidePr, send, stop, toggleMic } from './engine'
-import { Horse } from './Horse'
 import { Reactor } from './Hud'
-import { get, set, setSettings, useStore, type Msg } from './store'
+import { md } from './md'
+import { get, inLayout, set, setSettings, useStore, type Msg } from './store'
 import { stopSpeaking } from './voice'
-
-const esc = (s: string): string =>
-  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
-
-/** Just enough markdown for chat: code, bold, links, headings and line breaks. */
-function md(text: string): string {
-  return text
-    .split(/```/)
-    .map((part, i) => {
-      if (i % 2) return `<pre>${esc(part.replace(/^[a-z0-9+#-]*\n/i, ''))}</pre>`
-      return esc(part)
-        .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-        .replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>')
-        .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank">$1</a>')
-        .replace(/^#{1,4} (.+)$/gm, '<b>$1</b>')
-        .replace(/^\s*DONE\.?\s*$/gm, '<span class="done">DONE</span>')
-        .replace(/\n/g, '<br/>')
-    })
-    .join('')
-}
 
 const TOOL_ICON: Record<string, string> = {
   Bash: '›_',
@@ -36,6 +21,10 @@ const TOOL_ICON: Record<string, string> = {
   WebSearch: '◍',
   WebFetch: '◍',
   Agent: '❖'
+}
+
+const showSwarm = (): void => {
+  if (!inLayout('swarm')) set({ rightTab: 'swarm', rightOpen: true })
 }
 
 function Bubble({ m, room, bot }: { m: Msg; room: string; bot?: Bot }): JSX.Element {
@@ -50,15 +39,21 @@ function Bubble({ m, room, bot }: { m: Msg; room: string; bot?: Bot }): JSX.Elem
   }
   const speaking = status === 'speaking'
   return (
-    <div className={`msg bot-msg ${m.streaming ? 'live' : ''}`} style={{ ['--accent' as string]: bot?.look.accent ?? '#a855f7' }}>
+    <div className={`msg bot-msg ${m.streaming ? 'live' : ''}`}>
       <div className={`face ${speaking ? 'speaking' : ''}`}>
-        {bot && <Horse look={bot.look} size={44} speaking={speaking && !m.streaming} />}
+        {bot && <Cat look={bot.look} size={42} speaking={speaking && !m.streaming} busy={m.streaming} />}
       </div>
       <div className="body">
         <div className="who">
           {bot?.name ?? 'Bot'}
           {m.turn ? <span className="turn">turn {m.turn}</span> : null}
-          {m.streaming && <span className="typing"><i /><i /><i /></span>}
+          {m.streaming && (
+            <span className="typing">
+              <i />
+              <i />
+              <i />
+            </span>
+          )}
         </div>
         {m.tools.length > 0 && (
           <div className="tools">
@@ -83,15 +78,15 @@ function Bubble({ m, room, bot }: { m: Msg; room: string; bot?: Bot }): JSX.Elem
               <div className="ask-done">{a.answer === 'deny' ? 'You said no' : a.answer === 'always' ? 'Always allowed' : 'Allowed'}</div>
             ) : (
               <div className="row">
-                <button className="btn" onClick={() => answer(room, m.id, a.id, 'allow')}>
+                <button className="btn primary" onClick={() => answer(room, m.id, a.id, 'allow')}>
                   Allow
                 </button>
                 {a.canAlways && (
-                  <button className="btn ghost" onClick={() => answer(room, m.id, a.id, 'always')}>
+                  <button className="btn" onClick={() => answer(room, m.id, a.id, 'always')}>
                     Always allow
                   </button>
                 )}
-                <button className="btn ghost danger" onClick={() => answer(room, m.id, a.id, 'deny')}>
+                <button className="btn danger" onClick={() => answer(room, m.id, a.id, 'deny')}>
                   No
                 </button>
               </div>
@@ -99,20 +94,20 @@ function Bubble({ m, room, bot }: { m: Msg; room: string; bot?: Bot }): JSX.Elem
           </div>
         ))}
         {m.pr && (
-          <div className={`prcard ${m.pr.status}`} onClick={() => set({ rightTab: 'swarm', rightOpen: true })}>
+          <div className={`prcard ${m.pr.status}`} onClick={showSwarm}>
             <span className="prnum">PR #{m.pr.id}</span>
             <span className="prtitle">{m.pr.title}</span>
             <span className="prstat">
               {m.pr.files.length} file{m.pr.files.length === 1 ? '' : 's'}
               <i className="add">+{m.pr.files.reduce((n, f) => n + f.added, 0)}</i>
-              <i className="del">-{m.pr.files.reduce((n, f) => n + f.removed, 0)}</i>
+              <i className="del">−{m.pr.files.reduce((n, f) => n + f.removed, 0)}</i>
             </span>
             {m.pr.status === 'open' ? (
               <span className="row" onClick={(e) => e.stopPropagation()}>
-                <button className="btn" onClick={() => void decidePr(m.pr!, true)}>
+                <button className="btn primary" onClick={() => void decidePr(m.pr!, true)}>
                   Merge
                 </button>
-                <button className="btn ghost danger" onClick={() => void decidePr(m.pr!, false)}>
+                <button className="btn danger" onClick={() => void decidePr(m.pr!, false)}>
                   Reject
                 </button>
               </span>
@@ -140,8 +135,8 @@ function Stage(): JSX.Element | null {
         {crew.map((b, i) => {
           const st = status[b.id] ?? 'idle'
           return (
-            <div key={b.id} className={`seat ${st}`} style={{ ['--accent' as string]: b.look.accent }} title={`${b.name}: ${st}`}>
-              <Horse look={b.look} size={38} speaking={st === 'speaking'} />
+            <div key={b.id} className={`seat ${st}`} title={`${b.name}: ${st}`}>
+              <Cat look={b.look} size={30} speaking={st === 'speaking'} busy={st === 'thinking'} />
               <span>{b.name}</span>
               {i < crew.length - 1 && <em>→</em>}
             </div>
@@ -162,13 +157,12 @@ const MODES: { value: PermissionMode; label: string; hint: string }[] = [
   { value: 'acceptEdits', label: 'Edit freely', hint: 'Bots edit files freely and ask before running commands' },
   { value: 'auto', label: 'Auto', hint: 'Claude decides what is safe and asks when unsure' },
   { value: 'plan', label: 'Plan only', hint: 'Bots plan and change nothing' },
-  { value: 'bypassPermissions', label: 'YOLO', hint: 'Bots never ask. Only for folders you can afford to lose.' }
+  { value: 'bypassPermissions', label: 'Never ask', hint: 'Bots never ask. Only for folders you can afford to lose.' }
 ]
 
-function Composer({ hero }: { hero: boolean }): JSX.Element {
-  const room = useStore((s) => s.room)
+function Composer({ hero, room }: { hero: boolean; room: string }): JSX.Element {
   const bots = useStore((s) => s.bots)
-  const busy = useStore((s) => !!s.busy[s.room])
+  const busy = useStore((s) => !!s.busy[room])
   const anySpeaking = useStore((s) => Object.values(s.status).includes('speaking'))
   const settings = useStore((s) => s.settings)
   const models = useStore((s) => s.probe?.models)
@@ -184,7 +178,7 @@ function Composer({ hero }: { hero: boolean }): JSX.Element {
 
   const go = (): void => {
     if (!text.trim()) return
-    send(text)
+    send(text, room)
     setText('')
   }
 
@@ -201,15 +195,17 @@ function Composer({ hero }: { hero: boolean }): JSX.Element {
   return (
     <div className={hero ? 'composer hero' : 'composer'}>
       <div className={`inputbar ${listening ? 'listening' : ''}`}>
-        <button
-          className={`orb ${listening ? 'on' : ''} ${hearing ? 'hearing' : ''}`}
-          title={listening ? 'Stop listening' : 'Talk'}
-          onClick={toggleMic}
-        >
+        <button className={`orb ${listening ? 'on' : ''} ${hearing ? 'hearing' : ''}`} title={listening ? 'Stop listening' : 'Talk'} onClick={() => toggleMic(room)}>
           <span className="orb-core" />
-          <Reactor size={62} />
+          <Reactor size={58} />
           <svg className="mic" viewBox="0 0 24 24" width="20" height="20">
-            <path d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 0 0-7 0v5A3.5 3.5 0 0 0 12 15Zm6-3.5a6 6 0 0 1-12 0M12 17.5V21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path
+              d="M12 15a3.5 3.5 0 0 0 3.5-3.5v-5a3.5 3.5 0 0 0-7 0v5A3.5 3.5 0 0 0 12 15Zm6-3.5a6 6 0 0 1-12 0M12 17.5V21"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
           </svg>
         </button>
         <textarea
@@ -250,7 +246,7 @@ function Composer({ hero }: { hero: boolean }): JSX.Element {
           onClick={() => {
             const on = !settings.autoVoice
             void setSettings({ autoVoice: on })
-            if (on && !get().listening) toggleMic()
+            if (on && !get().listening) toggleMic(room)
           }}
         >
           <i className="led" /> Auto-voice
@@ -296,7 +292,10 @@ function Composer({ hero }: { hero: boolean }): JSX.Element {
             ))}
           </select>
         </label>
-        <label className={`ctl sel ${settings.permissionMode === 'bypassPermissions' ? 'warn' : ''}`} title={MODES.find((m) => m.value === settings.permissionMode)?.hint}>
+        <label
+          className={`ctl sel ${settings.permissionMode === 'bypassPermissions' ? 'warn' : ''}`}
+          title={MODES.find((m) => m.value === settings.permissionMode)?.hint}
+        >
           Permissions
           <select value={settings.permissionMode} onChange={(e) => void setSettings({ permissionMode: e.target.value as PermissionMode })}>
             {MODES.map((m) => (
@@ -311,16 +310,14 @@ function Composer({ hero }: { hero: boolean }): JSX.Element {
   )
 }
 
-const IDEAS = [
-  'Build a one-page site for our school club',
-  'Make a tiny browser game with a high score',
-  'Plan and write a study guide for my next test'
-]
+const IDEAS = ['Build a one-page site for a product launch', 'Make a tiny browser game with a high score', 'Plan and write a study guide for my next test']
 
-export function Center(): JSX.Element {
-  const room = useStore((s) => s.room)
+/** One chat. `room` is fixed for a bot's own panel; the main Chat panel follows the store's room. */
+export function Chat({ room: fixed }: { room?: string }): JSX.Element {
+  const storeRoom = useStore((s) => s.room)
+  const room = fixed ?? storeRoom
   const bots = useStore((s) => s.bots)
-  const msgs = useStore((s) => s.msgs[s.room]) ?? []
+  const msgs = useStore((s) => s.msgs[room]) ?? []
   const scroller = useRef<HTMLDivElement>(null)
   const bot = bots.find((b) => b.id === room)
   const hero = msgs.length === 0
@@ -330,6 +327,17 @@ export function Center(): JSX.Element {
     if (el) el.scrollTop = el.scrollHeight
   }, [msgs])
 
+  if (room !== 'crew' && !bot) {
+    return (
+      <section className="center">
+        <div className="empty">
+          <b>Bot gone</b>
+          <p>This bot was deleted. Close the panel or pick another one.</p>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="center">
       <div className="room-head">
@@ -337,7 +345,7 @@ export function Center(): JSX.Element {
           <Stage />
         ) : (
           bot && (
-            <div className="solo" style={{ ['--accent' as string]: bot.look.accent }}>
+            <div className="solo">
               <b>{bot.name}</b>
               <span>{bot.pronouns}</span>
               <small>{bot.task}</small>
@@ -348,14 +356,14 @@ export function Center(): JSX.Element {
 
       {hero ? (
         <div className="hero-wrap">
-          <Reactor size={620} className="backdrop" />
+          <Reactor size={600} className="backdrop" />
           {room === 'crew' ? (
             <div className="hero-crew">
               {bots
                 .filter((b) => b.inCrew)
                 .map((b, i) => (
                   <span key={b.id} style={{ animationDelay: `${i * 0.25}s` }}>
-                    <Horse look={b.look} size={118} mode="full" />
+                    <Cat look={b.look} size={104} mode="full" />
                   </span>
                 ))}
             </div>
@@ -363,31 +371,19 @@ export function Center(): JSX.Element {
             bot && (
               <div className="hero-crew solo-hero">
                 <span>
-                  <Horse look={bot.look} size={150} mode="full" />
+                  <Cat look={bot.look} size={140} mode="full" />
                 </span>
               </div>
             )
           )}
           <div className="floor" />
-          <h1 className="glitch" data-text={room === 'crew' ? 'What are we making?' : `Yo, it's ${bot?.name}.`}>
-            {room === 'crew' ? (
-              <>
-                What are we <mark>making?</mark>
-              </>
-            ) : (
-              <>
-                Yo, it's <mark>{bot?.name}.</mark>
-              </>
-            )}
-          </h1>
-          <p className="sub">
-            {room === 'crew' ? 'Say it or type it. The crew takes turns, out loud.' : bot?.tagline}
-          </p>
-          <Composer hero />
+          <h1 className="headline">{room === 'crew' ? 'What are we making?' : `This is ${bot?.name}.`}</h1>
+          <p className="sub">{room === 'crew' ? 'Say it or type it. The crew takes turns, out loud.' : bot?.tagline}</p>
+          <Composer hero room={room} />
           {room === 'crew' && (
             <div className="ideas">
               {IDEAS.map((t) => (
-                <button key={t} onClick={() => send(t)}>
+                <button key={t} onClick={() => send(t, 'crew')}>
                   {t}
                 </button>
               ))}
@@ -401,7 +397,7 @@ export function Center(): JSX.Element {
               <Bubble key={m.id} m={m} room={room} bot={bots.find((b) => b.id === m.botId)} />
             ))}
           </div>
-          <Composer hero={false} />
+          <Composer hero={false} room={room} />
         </>
       )}
     </section>

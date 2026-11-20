@@ -9,7 +9,8 @@ import {
   shell,
   systemPreferences
 } from 'electron'
-import type { Bot, PermissionDecision, RunParams, Settings, SettingsView, Voice } from '../shared/types'
+import { normalizeCurrent, removeLayout, saveLayout, type Layout, type SavedLayout } from '../shared/layouts'
+import { normalizeLook, type Bot, type PermissionDecision, type RunParams, type Settings, type SettingsView, type Voice } from '../shared/types'
 import * as claude from './claude'
 import { load, update } from './store'
 import * as voice from './voice'
@@ -26,14 +27,15 @@ function settingsView(): SettingsView {
 }
 
 function createWindow(): void {
-  const shot = process.env.OLIVER_SHOT
+  const shot = process.env.GLYPHH_BOT_SHOT
   win = new BrowserWindow({
     width: 1560,
     height: 980,
     minWidth: 1100,
     minHeight: 700,
     show: !shot,
-    backgroundColor: '#07040f',
+    title: 'Glyphh Bot',
+    backgroundColor: '#000000',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -50,17 +52,19 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL)
-  else void win.loadFile(join(__dirname, '../renderer/index.html'))
+  const query = shot ? { shot: '1' } : undefined
+  if (process.env.ELECTRON_RENDERER_URL) void win.loadURL(process.env.ELECTRON_RENDERER_URL + (shot ? '?shot=1' : ''))
+  else void win.loadFile(join(__dirname, '../renderer/index.html'), { query })
 
-  // OLIVER_SHOT=<file.png> saves a picture of the window and quits (used to check the UI).
+  // GLYPHH_BOT_SHOT=<file.png> saves a picture of the window and quits (used to check the UI).
+  // GLYPHH_BOT_SHOT_JS runs in the page first (window.__shot sets the scene).
   if (shot) {
     win.webContents.once('did-finish-load', async () => {
       const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
-      await wait(Number(process.env.OLIVER_SHOT_WAIT ?? 2500))
-      if (process.env.OLIVER_SHOT_JS) {
-        await win!.webContents.executeJavaScript(process.env.OLIVER_SHOT_JS).catch(console.error)
-        await wait(Number(process.env.OLIVER_SHOT_AFTER ?? 1500))
+      await wait(Number(process.env.GLYPHH_BOT_SHOT_WAIT ?? 2500))
+      if (process.env.GLYPHH_BOT_SHOT_JS) {
+        await win!.webContents.executeJavaScript(process.env.GLYPHH_BOT_SHOT_JS).catch(console.error)
+        await wait(Number(process.env.GLYPHH_BOT_SHOT_AFTER ?? 1500))
       }
       const img = await win!.webContents.capturePage()
       writeFileSync(shot, img.toPNG())
@@ -72,6 +76,8 @@ function createWindow(): void {
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => R | Promise<R>): void {
   ipcMain.handle(channel, (_e, ...args) => fn(...(args as A)))
 }
+
+app.setName('Glyphh Bot')
 
 app.whenReady().then(() => {
   // The only permission the app's own pages need is the microphone.
@@ -93,7 +99,8 @@ app.whenReady().then(() => {
   handle('agent:permission', (id: string, d: PermissionDecision) => claude.answerPermission(id, d))
 
   handle('bots:list', () => load().bots)
-  handle('bots:save', (bot: Bot) => {
+  handle('bots:save', (raw: Bot) => {
+    const bot = { ...raw, look: normalizeLook(raw.look) }
     return update((d) => {
       const i = d.bots.findIndex((b) => b.id === bot.id)
       if (i >= 0) d.bots[i] = bot
@@ -133,6 +140,28 @@ app.whenReady().then(() => {
   handle('ws:read', (p: string) => ws.read(p))
   handle('ws:write', (p: string, content: string) => ws.write(p, content))
   handle('ws:reveal', async () => shell.showItemInFolder((await ws.current()).path))
+  handle('ws:list', (dir: string) => ws.list(dir))
+  handle('ws:search', (q: string) => ws.search(q))
+  handle('ws:mkdir', (p: string) => ws.mkdir(p))
+  handle('ws:rename', (from: string, to: string) => ws.rename(from, to))
+  handle('ws:trash', (p: string) => ws.trash(p))
+  handle('ws:exists', (p: string) => ws.exists(p))
+  handle('ws:diff', () => ws.workingDiff())
+  handle('ws:pickFile', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Open a file in the browser', properties: ['openFile'] })
+    return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
+  })
+
+  handle('layouts:list', () => load().layouts)
+  handle('layouts:save', (l: SavedLayout, replacing?: string) => {
+    const next = saveLayout(load().layouts, l, replacing)
+    return update((d) => (d.layouts = next)).layouts
+  })
+  handle('layouts:remove', (name: string) => update((d) => (d.layouts = removeLayout(d.layouts, name))).layouts)
+  handle('layouts:current', () => load().layout)
+  handle('layouts:setCurrent', (l: Layout) => {
+    update((d) => (d.layout = normalizeCurrent(l)))
+  })
 
   handle('git:beginTurn', (branch: string) => ws.beginTurn(branch))
   handle('git:endTurn', (p: Parameters<typeof ws.endTurn>[0]) => ws.endTurn(p))

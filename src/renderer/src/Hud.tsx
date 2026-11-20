@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useStore } from './store'
 
-/** The arc reactor: rings of ticks and arcs turning at their own speeds. */
+/** The rings: ticks and arcs turning at their own speeds, white on black. */
 export function Reactor({ size, className = '' }: { size: number; className?: string }): JSX.Element {
   return (
     <svg className={`reactor ${className}`} width={size} height={size} viewBox="0 0 200 200" aria-hidden>
@@ -36,14 +36,14 @@ function Clock(): JSX.Element {
 }
 
 const MODE = {
-  default: 'ASK',
-  acceptEdits: 'EDIT',
-  auto: 'AUTO',
-  plan: 'PLAN',
-  bypassPermissions: 'YOLO'
+  default: 'Ask me',
+  acceptEdits: 'Edit freely',
+  auto: 'Auto',
+  plan: 'Plan only',
+  bypassPermissions: 'Never ask'
 } as const
 
-/** The telemetry strip along the bottom. */
+/** The status strip along the bottom. */
 export function StatusBar(): JSX.Element {
   const auth = useStore((s) => s.auth)
   const settings = useStore((s) => s.settings)
@@ -51,29 +51,33 @@ export function StatusBar(): JSX.Element {
   const status = useStore((s) => s.status)
   const listening = useStore((s) => s.listening)
   const branch = useStore((s) => s.branch)
+  const layout = useStore((s) => s.layout.name)
   const connected = useStore((s) => s.probe?.connectors.filter((c) => c.status === 'connected').length)
   const active = Object.values(status).filter((s) => s === 'thinking' || s === 'speaking').length
   return (
     <footer className="statusbar">
       <span className={auth.loggedIn ? 'stat ok' : 'stat bad'}>
-        <i /> CLAUDE {auth.loggedIn ? `LINKED${auth.subscriptionType ? ' / ' + auth.subscriptionType.toUpperCase() : ''}` : 'OFFLINE'}
+        <i /> Claude {auth.loggedIn ? `connected${auth.subscriptionType ? ` · ${auth.subscriptionType}` : ''}` : 'not connected'}
       </span>
       <span className={settings.elevenKeySource === 'none' ? 'stat bad' : 'stat ok'}>
-        <i /> VOICE {settings.elevenKeySource === 'none' ? 'NO KEY' : settings.muted ? 'MUTED' : 'LIVE'}
+        <i /> Voice {settings.elevenKeySource === 'none' ? 'no key' : settings.muted ? 'off' : 'on'}
       </span>
       <span className={listening ? 'stat hot' : 'stat'}>
-        <i /> MIC {listening ? 'OPEN' : 'OFF'}
+        <i /> Mic {listening ? 'open' : 'off'}
       </span>
-      <span className="stat">CONNECTORS {connected ?? '--'}</span>
-      <span className={settings.permissionMode === 'bypassPermissions' ? 'stat bad' : 'stat'}>PERMS {MODE[settings.permissionMode]}</span>
+      <span className="stat">Connectors {connected ?? '-'}</span>
+      <span className={settings.permissionMode === 'bypassPermissions' ? 'stat bad' : 'stat'}>
+        Permissions {MODE[settings.permissionMode]}
+      </span>
       <span className="eq" aria-hidden>
         {Array.from({ length: 24 }, (_, i) => (
           <i key={i} style={{ animationDelay: `${(i * 137) % 900}ms` }} />
         ))}
       </span>
+      <span className="stat">Layout {layout}</span>
       <span className="stat">
-        CREW {bots.filter((b) => b.inCrew).length}/{bots.length}
-        {active ? ` · ${active} ACTIVE` : ''}
+        Crew {bots.filter((b) => b.inCrew).length}/{bots.length}
+        {active ? ` · ${active} working` : ''}
       </span>
       {branch && <span className="stat">⎇ {branch}</span>}
       <Clock />

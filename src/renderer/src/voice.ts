@@ -68,7 +68,7 @@ class Mic {
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
       })
     } catch {
-      toast('Oliver needs the microphone. Allow it in System Settings, Privacy, Microphone.')
+      toast('Glyphh Bot needs the microphone. Allow it in System Settings, Privacy, Microphone.')
       return
     }
     this.ctx = new AudioContext()

@@ -5,6 +5,7 @@ import {
   addMsg,
   api,
   get,
+  inLayout,
   patchMsg,
   refreshFiles,
   set,
@@ -13,6 +14,7 @@ import {
   uid,
   type Msg
 } from './store'
+import { PART_NAMES } from './catArt'
 import { mic, speak, stopSpeaking } from './voice'
 
 const live = new Map<string, { room: string; msgId: string }>()
@@ -52,16 +54,21 @@ export function startEvents(): () => void {
 
 function describeLook(bot: Bot): string {
   const l = bot.look
-  return `${l.maneStyle} mane, a ${l.top}, ${l.jeans} jeans, sneakers${
-    l.accessory !== 'none' ? `, ${l.accessory}` : ''
-  }`
+  const parts = [
+    PART_NAMES.head[l.head].toLowerCase(),
+    PART_NAMES.eye[l.eye].toLowerCase(),
+    PART_NAMES.tail[l.tail].toLowerCase(),
+    l.extra !== 'none' ? PART_NAMES.extra[l.extra].toLowerCase() : '',
+    l.accessory !== 'none' ? PART_NAMES.accessory[l.accessory].toLowerCase() : ''
+  ]
+  return parts.filter(Boolean).join(', ')
 }
 
 function persona(bot: Bot, cwd: string): string {
-  return `You are ${bot.name} (${bot.pronouns}), a bot in Oliver, a voice-first bot OS. You are a horse with the style of a teen in 2026: ${describeLook(bot)}.
+  return `You are ${bot.name} (${bot.pronouns}), a bot in Glyphh Bot, a voice-first bot OS. You are Spike, the Glyphh alien cat, in black and white, with your own look: ${describeLook(bot)}.
 Personality: ${bot.personality}
 Your job: ${bot.task}
-Stay in character and do real work with your tools. Keep it kind and school-appropriate.
+Stay in character and do real work with your tools. Keep it kind.
 Your final message each turn is read aloud in your own voice. Make it 1 to 4 short sentences of natural speech: no markdown, no lists, no code, no file paths spelled out, no emoji. Put details in files, not in what you say.
 Your working folder is ${cwd}.`
 }
@@ -151,7 +158,7 @@ function transcript(from: number): string {
 function turnPrompt(bot: Bot, crew: Bot[], task: string, from: number, branch: string | null, turn: number, last: boolean): string {
   const roster = crew.map((b) => `- ${b.name} (${b.pronouns}): ${b.task}`).join('\n')
   const work = branch
-    ? `You are on git branch "${branch}" in the crew's shared repo; every earlier turn is already merged into it. Do your part of the task now and change real files. Do not commit, push or switch branches: when you finish, Oliver commits your branch and opens your pull request.
+    ? `You are on git branch "${branch}" in the crew's shared repo; every earlier turn is already merged into it. Do your part of the task now and change real files. Do not commit, push or switch branches: when you finish, Glyphh Bot commits your branch and opens your pull request.
 Then end with your spoken update to the crew: what you did and what should happen next.${
         last ? ' This is the last turn, so leave things working.' : ''
       } If the whole task is finished and nothing is left to do, put the single word DONE on its own last line.`
@@ -181,7 +188,7 @@ async function swarm(task: string): Promise<void> {
   set((st) => ({
     busy: { ...st.busy, crew: true },
     swarm: { task, running: true, git, order: crew.map((b) => b.id), current: 0, round: 1, rounds, turn: 0, from },
-    ...(git ? { rightTab: 'swarm' as const, rightOpen: true } : {})
+    ...(git && !inLayout('swarm') ? { rightTab: 'swarm' as const, rightOpen: true } : {})
   }))
   stopFlag = false
   const stamp = Date.now().toString(36).slice(-4)
@@ -251,8 +258,8 @@ async function swarm(task: string): Promise<void> {
 
 // ---------------------------------------------------------------- public
 
-/** Sends what the person typed or said to the room they are in. */
-export function send(text: string): void {
+/** Sends what the person typed or said to a room: the crew, or one bot. */
+export function send(text: string, room = get().room): void {
   text = text.trim()
   if (!text) return
   const s = get()
@@ -260,13 +267,13 @@ export function send(text: string): void {
     toast('Connect to Claude first.')
     return
   }
-  if (s.room === 'crew') {
+  if (room === 'crew') {
     // While the crew is working, a message is heard by the next bot up.
     if (s.busy.crew) addMsg('crew', { role: 'user', text })
     else void swarm(text)
     return
   }
-  const bot = s.bots.find((b) => b.id === s.room)
+  const bot = s.bots.find((b) => b.id === room)
   if (!bot) return
   if (s.busy[bot.id]) {
     toast(`${bot.name} is still working.`)
@@ -306,13 +313,13 @@ export function answer(room: string, msgId: string, askId: string, decision: 'al
 }
 
 /** Mic on: one message, or hands-free back and forth when auto-voice is on. */
-export function toggleMic(): void {
+export function toggleMic(room = get().room): void {
   if (mic.on) {
     mic.stop()
     return
   }
   void mic.start((text) => {
-    send(text)
+    send(text, room)
     if (!get().settings.autoVoice) mic.stop()
   })
 }

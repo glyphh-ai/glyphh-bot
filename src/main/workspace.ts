@@ -3,12 +3,16 @@
 import { execFile } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join, relative, resolve, sep } from 'node:path'
-import type { PR, PRFile, TreeNode, Workspace } from '../shared/types'
+import { basename, dirname, join, relative } from 'node:path'
+import { shell } from 'electron'
+import type { FileEntry, FileSearch, PR, PRFile, TreeNode, Workspace } from '../shared/types'
 import { env } from './claude'
+import * as files from './files'
+import { inside } from './files'
 import { load, update } from './store'
 
-const HOME = join(homedir(), 'Oliver')
+/** Projects live in ~/Glyphh Bot (GLYPHH_BOT_HOME moves them; the screenshot runs use a scratch folder). */
+const HOME = process.env.GLYPHH_BOT_HOME || join(homedir(), 'Glyphh Bot')
 const SKIP = new Set(['node_modules', '.git', 'out', 'dist', '.DS_Store', '__pycache__', '.venv'])
 
 function sh(cmd: string, args: string[], cwd: string): Promise<string> {
@@ -27,15 +31,15 @@ async function ensureRepo(dir: string): Promise<void> {
   if (existsSync(join(dir, '.git'))) return
   await git(dir, 'init', '-b', 'main')
   if (!existsSync(join(dir, 'README.md'))) {
-    writeFileSync(join(dir, 'README.md'), `# ${basename(dir)}\n\nBuilt by the Oliver crew.\n`)
+    writeFileSync(join(dir, 'README.md'), `# ${basename(dir)}\n\nBuilt by the Glyphh Bot crew.\n`)
   }
   await git(dir, 'add', '-A')
   await git(
     dir,
     '-c',
-    'user.name=Oliver',
+    'user.name=Glyphh Bot',
     '-c',
-    'user.email=oliver@oliver.local',
+    'user.email=bot@glyphhbot.local',
     'commit',
     '-m',
     'Start the workspace'
@@ -70,13 +74,6 @@ export async function use(path: string): Promise<Workspace> {
   await ensureRepo(path)
   update((d) => (d.workspace = path))
   return { path, name: basename(path) }
-}
-
-/** A path inside the workspace, or an error: bots and the editor stay in the folder. */
-function inside(root: string, p: string): string {
-  const full = resolve(root, p)
-  if (full !== root && !full.startsWith(root + sep)) throw new Error('Outside the workspace')
-  return full
 }
 
 function walk(root: string, dir: string, depth: number, budget: { n: number }): TreeNode[] {
@@ -122,13 +119,49 @@ export async function read(p: string): Promise<string> {
 
 export async function write(p: string, content: string): Promise<void> {
   const { path } = await current()
-  writeFileSync(inside(path, p), content)
+  const full = inside(path, p)
+  mkdirSync(dirname(full), { recursive: true })
+  writeFileSync(full, content)
+}
+
+// ---------------------------------------------------- the Files panel
+
+export async function list(dir: string): Promise<FileEntry[]> {
+  return files.listDir((await current()).path, dir)
+}
+
+export async function search(q: string): Promise<FileSearch> {
+  return files.searchFiles((await current()).path, q)
+}
+
+export async function mkdir(p: string): Promise<void> {
+  await files.makeDir((await current()).path, p)
+}
+
+export async function rename(from: string, to: string): Promise<void> {
+  await files.renamePath((await current()).path, from, to)
+}
+
+export async function exists(p: string): Promise<boolean> {
+  return existsSync(inside((await current()).path, p))
+}
+
+/** Delete moves to the Trash, never a hard unlink. */
+export async function trash(p: string): Promise<void> {
+  const { path } = await current()
+  const full = inside(path, p)
+  if (full === path) throw new Error('The workspace itself cannot be deleted here')
+  await shell.trashItem(full)
+}
+
+export async function workingDiff(): Promise<{ text: string; error?: string }> {
+  return files.workingDiff((await current()).path, env())
 }
 
 // ------------------------------------------------------------ git turns
 
 function prFile(cwd: string): string {
-  return join(cwd, '.git', 'oliver-prs.json')
+  return join(cwd, '.git', 'glyphh-bot-prs.json')
 }
 
 function readPrs(cwd: string): PR[] {
@@ -153,7 +186,7 @@ export async function branch(): Promise<string> {
 }
 
 function turnFile(cwd: string): string {
-  return join(cwd, '.git', 'oliver-turn.json')
+  return join(cwd, '.git', 'glyphh-bot-turn.json')
 }
 
 /**
@@ -176,9 +209,9 @@ export async function recover(): Promise<void> {
   await git(
     path,
     '-c',
-    'user.name=Oliver',
+    'user.name=Glyphh Bot',
     '-c',
-    'user.email=oliver@oliver.local',
+    'user.email=bot@glyphhbot.local',
     'commit',
     '-m',
     'Unfinished turn'
@@ -225,7 +258,7 @@ export async function endTurn(p: {
       '-c',
       `user.name=${p.botName}`,
       '-c',
-      `user.email=${p.botId}@oliver.local`,
+      `user.email=${p.botId}@glyphhbot.local`,
       'commit',
       '-m',
       p.title
@@ -301,9 +334,9 @@ export async function merge(id: number): Promise<PR> {
       await git(
         path,
         '-c',
-        'user.name=Oliver',
+        'user.name=Glyphh Bot',
         '-c',
-        'user.email=oliver@oliver.local',
+        'user.email=bot@glyphhbot.local',
         'merge',
         '--no-ff',
         pr.branch,

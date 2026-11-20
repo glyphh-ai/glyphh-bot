@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Bot, Look } from '../../shared/types'
-import { ACCESSORIES, JEANS, MANES, TOPS } from '../../shared/types'
-import { Horse, randomLook } from './Horse'
-import { api, get, refreshProbe, set, setSettings, toast, uid, useStore } from './store'
+import { ACCESSORIES, EXTRAS, EYES, HEADS, POSES, TAILS } from '../../shared/types'
+import logo from './assets/glyphh-logo-text-white.png'
+import { PART_NAMES } from './catArt'
+import { Cat, randomLook } from './Cat'
+import { api, confirmAsk, get, refreshProbe, set, setSettings, toast, uid, useStore, why } from './store'
 import { speak } from './voice'
 
 /** Follows `claude auth login` and notices when the person is signed in. */
@@ -72,17 +74,18 @@ export function LoginGate(): JSX.Element {
         <div className="hero-crew small">
           {bots.slice(0, 5).map((b, i) => (
             <span key={b.id} style={{ animationDelay: `${i * 0.25}s` }}>
-              <Horse look={b.look} size={64} mode="full" />
+              <Cat look={b.look} size={64} mode="full" />
             </span>
           ))}
         </div>
-        <h1 className="glitch">
-          <mark>Oliver</mark>
+        <h1 className="gate-brand">
+          <img src={logo} alt="Glyphh" />
+          <span>Bot</span>
         </h1>
-        <p className="sub">Your crew runs on your own Claude account. Connect it to wake them up.</p>
+        <p className="sub">Your crew runs on your own Claude account. Connect it to start.</p>
         {auth.error && <p className="err">{auth.error}</p>}
         <button
-          className="btn big"
+          className="btn primary big"
           disabled={loggingIn}
           onClick={() => {
             set({ loggingIn: true, authLog: [] })
@@ -213,14 +216,49 @@ const BLANK: Bot = {
   inCrew: true
 }
 
-const COLORS: { key: keyof Look; label: string }[] = [
-  { key: 'coat', label: 'Coat' },
-  { key: 'mane', label: 'Mane' },
-  { key: 'topColor', label: 'Top' },
-  { key: 'jeansColor', label: 'Jeans' },
-  { key: 'sneakers', label: 'Kicks' },
-  { key: 'accent', label: 'Accent' }
-]
+const PARTS = [
+  { key: 'head', list: HEADS },
+  { key: 'tail', list: TAILS },
+  { key: 'eye', list: EYES },
+  { key: 'extra', list: EXTRAS },
+  { key: 'accessory', list: ACCESSORIES },
+  { key: 'pose', list: POSES }
+] as const
+
+/** Asks yes or no in the app's own style (store.confirmAsk). */
+export function ConfirmModal(): JSX.Element | null {
+  const c = useStore((s) => s.confirm)
+  useEffect(() => {
+    if (!c) return
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') answer(false)
+      if (e.key === 'Enter') answer(true)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [c])
+  if (!c) return null
+  function answer(ok: boolean): void {
+    set({ confirm: null })
+    c!.resolve(ok)
+  }
+  return (
+    <div className="veil top" onMouseDown={(e) => e.target === e.currentTarget && answer(false)}>
+      <div className="modal confirm">
+        <h2>{c.title}</h2>
+        {c.body && <p className="dim">{c.body}</p>}
+        <div className="row end">
+          <button className="btn" onClick={() => answer(false)}>
+            Cancel
+          </button>
+          <button className={c.danger ? 'btn danger solid' : 'btn primary'} autoFocus onClick={() => answer(true)}>
+            {c.yes}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
   const voices = useStore((s) => s.voices)
@@ -241,7 +279,7 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
       const made = await api.bots.generate(idea, voices)
       setB((x) => ({ ...x, ...made }))
     } catch (e) {
-      toast((e as Error).message.replace(/^Error invoking remote method '[^']+': Error: /, ''))
+      toast(why(e))
     } finally {
       setMaking(false)
     }
@@ -267,13 +305,12 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
   return (
     <Modal title={bot ? `Edit ${bot.name}` : 'New bot'} wide>
       <div className="botedit">
-        <div className="preview" style={{ ['--accent' as string]: b.look.accent }}>
-          <div className="glow" />
-          <Horse look={b.look} size={210} mode="full" />
+        <div className="preview">
+          <Cat look={b.look} size={190} mode="full" />
           <b>{b.name || 'Your bot'}</b>
           <small>{b.tagline || b.pronouns}</small>
           <button className="btn ghost" onClick={() => look(randomLook())}>
-            Shuffle the fit
+            Shuffle the cat
           </button>
         </div>
 
@@ -283,7 +320,7 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
             <div className="row">
               <input
                 value={idea}
-                placeholder="a skater girl who tests games and roasts bugs"
+                placeholder="a careful tester who checks every page on a phone"
                 onChange={(e) => setIdea(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && void make()}
               />
@@ -357,44 +394,14 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
 
           <label>Look</label>
           <div className="looks">
-            <select value={b.look.maneStyle} onChange={(e) => look({ maneStyle: e.target.value as Look['maneStyle'] })}>
-              {MANES.map((m) => (
-                <option key={m} value={m}>
-                  {m} mane
-                </option>
-              ))}
-            </select>
-            <select value={b.look.top} onChange={(e) => look({ top: e.target.value as Look['top'] })}>
-              {TOPS.map((m) => (
-                <option key={m}>{m}</option>
-              ))}
-            </select>
-            <select value={b.look.jeans} onChange={(e) => look({ jeans: e.target.value as Look['jeans'] })}>
-              {JEANS.map((m) => (
-                <option key={m} value={m}>
-                  {m === 'skirt' ? 'denim skirt' : m === 'shorts' ? 'jean shorts' : `${m} jeans`}
-                </option>
-              ))}
-            </select>
-            <select value={b.look.accessory} onChange={(e) => look({ accessory: e.target.value as Look['accessory'] })}>
-              {ACCESSORIES.map((m) => (
-                <option key={m} value={m}>
-                  {m === 'none' ? 'no extras' : m}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="swatches">
-            {COLORS.map((c) => (
-              <label key={c.key} className="swatch">
-                <input type="color" value={b.look[c.key] as string} onChange={(e) => look({ [c.key]: e.target.value })} />
-                {c.label}
-              </label>
-            ))}
-            {(['lashes', 'blaze', 'freckles'] as const).map((k) => (
-              <button key={k} className={b.look[k] ? 'pill on' : 'pill'} onClick={() => look({ [k]: !b.look[k] })}>
-                {k}
-              </button>
+            {PARTS.map((p) => (
+              <select key={p.key} value={b.look[p.key]} onChange={(e) => look({ [p.key]: e.target.value } as Partial<Look>)}>
+                {p.list.map((m) => (
+                  <option key={m} value={m}>
+                    {(PART_NAMES[p.key] as Record<string, string>)[m] ?? m}
+                  </option>
+                ))}
+              </select>
             ))}
           </div>
 
@@ -413,6 +420,8 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
               <button
                 className="btn ghost danger"
                 onClick={async () => {
+                  if (!(await confirmAsk({ title: `Delete ${bot.name}?`, body: 'The bot and its chat go. Your files stay.', yes: 'Delete', danger: true })))
+                    return
                   set({ bots: await api.bots.remove(bot.id), modal: null, room: 'crew' })
                 }}
               >
@@ -432,7 +441,7 @@ export function BotEditor({ bot }: { bot: Bot | null }): JSX.Element {
                 Forget our chat
               </button>
             )}
-            <button className="btn" onClick={() => void save()}>
+            <button className="btn primary" onClick={() => void save()}>
               Save bot
             </button>
           </div>

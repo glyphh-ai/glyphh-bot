@@ -1,8 +1,12 @@
 // Types shared by the main process, the preload bridge and the renderer.
+import type { Layout, SavedLayout } from './layouts'
 
-export type ManeStyle = 'long' | 'mohawk' | 'curly' | 'braids' | 'buzz' | 'bun' | 'swoosh'
-export type TopStyle = 'hoodie' | 'tee' | 'crop' | 'jersey' | 'flannel' | 'bomber'
-export type JeansStyle = 'baggy' | 'skinny' | 'ripped' | 'shorts' | 'skirt'
+// Every bot is Spike, the Glyphh cat, in black and white. The parts, the
+// extras and the pose change from bot to bot; the colours never do.
+export type Head = 'classic' | 'spiky' | 'tall' | 'folded' | 'round'
+export type Tail = 'spike' | 'bolt' | 'curl' | 'long'
+export type Eye = 'dot' | 'side' | 'big' | 'sleepy' | 'heart' | 'star'
+export type Extra = 'none' | 'antenna' | 'cape' | 'bolt'
 export type Accessory =
   | 'none'
   | 'headphones'
@@ -11,15 +15,15 @@ export type Accessory =
   | 'glasses'
   | 'shades'
   | 'bow'
-  | 'earring'
+  | 'scarf'
+  | 'crown'
   | 'chain'
-  | 'septum'
-  | 'bandana'
-  | 'choker'
+export type Pose = 'stand' | 'lean' | 'hop' | 'turn'
 
-export const MANES: ManeStyle[] = ['long', 'mohawk', 'curly', 'braids', 'buzz', 'bun', 'swoosh']
-export const TOPS: TopStyle[] = ['hoodie', 'tee', 'crop', 'jersey', 'flannel', 'bomber']
-export const JEANS: JeansStyle[] = ['baggy', 'skinny', 'ripped', 'shorts', 'skirt']
+export const HEADS: Head[] = ['classic', 'spiky', 'tall', 'folded', 'round']
+export const TAILS: Tail[] = ['spike', 'bolt', 'curl', 'long']
+export const EYES: Eye[] = ['dot', 'side', 'big', 'sleepy', 'heart', 'star']
+export const EXTRAS: Extra[] = ['none', 'antenna', 'cape', 'bolt']
 export const ACCESSORIES: Accessory[] = [
   'none',
   'headphones',
@@ -28,28 +32,34 @@ export const ACCESSORIES: Accessory[] = [
   'glasses',
   'shades',
   'bow',
-  'earring',
-  'chain',
-  'septum',
-  'bandana',
-  'choker'
+  'scarf',
+  'crown',
+  'chain'
 ]
+export const POSES: Pose[] = ['stand', 'lean', 'hop', 'turn']
 
-/** How a bot's horse looks. Every bot is the same horse, styled differently. */
+/** How a bot's cat looks. */
 export interface Look {
-  coat: string
-  mane: string
-  maneStyle: ManeStyle
-  top: TopStyle
-  topColor: string
-  jeans: JeansStyle
-  jeansColor: string
-  sneakers: string
+  head: Head
+  tail: Tail
+  eye: Eye
+  extra: Extra
   accessory: Accessory
-  accent: string
-  lashes: boolean
-  blaze: boolean
-  freckles: boolean
+  pose: Pose
+}
+
+/** Any partial or old look made whole: unknown parts fall back to Spike's own. */
+export function normalizeLook(raw: unknown): Look {
+  const l = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const one = <T extends string>(v: unknown, all: T[], d: T): T => (all.includes(v as T) ? (v as T) : d)
+  return {
+    head: one(l.head, HEADS, 'classic'),
+    tail: one(l.tail, TAILS, 'spike'),
+    eye: one(l.eye, EYES, 'dot'),
+    extra: one(l.extra, EXTRAS, 'none'),
+    accessory: one(l.accessory, ACCESSORIES, 'none'),
+    pose: one(l.pose, POSES, 'stand')
+  }
 }
 
 export interface Bot {
@@ -163,6 +173,19 @@ export interface TreeNode {
   children?: TreeNode[]
 }
 
+/** One row of the Files panel: a path relative to the workspace. */
+export interface FileEntry {
+  name: string
+  path: string
+  dir: boolean
+}
+
+export interface FileSearch {
+  entries: FileEntry[]
+  truncated?: boolean
+  error?: string
+}
+
 export interface PRFile {
   path: string
   added: number
@@ -196,7 +219,7 @@ export interface Workspace {
   name: string
 }
 
-export interface OliverApi {
+export interface GlyphhBotApi {
   auth: {
     status(): Promise<AuthStatus>
     login(): Promise<void>
@@ -237,6 +260,17 @@ export interface OliverApi {
     read(path: string): Promise<string>
     write(path: string, content: string): Promise<void>
     reveal(): Promise<void>
+    /** The Files panel: one folder's children, a name search, and changes. */
+    list(dir: string): Promise<FileEntry[]>
+    search(query: string): Promise<FileSearch>
+    mkdir(path: string): Promise<void>
+    rename(from: string, to: string): Promise<void>
+    trash(path: string): Promise<void>
+    exists(path: string): Promise<boolean>
+    /** The working tree against HEAD, untracked files included. */
+    diff(): Promise<{ text: string; error?: string }>
+    /** A file from anywhere on disk, picked in the system dialog (the Browser opens it). */
+    pickFile(): Promise<string | null>
   }
   git: {
     beginTurn(branch: string): Promise<{ base: string; baseSha: string }>
@@ -255,5 +289,14 @@ export interface OliverApi {
     diff(id: number): Promise<string>
     branch(): Promise<string>
   }
+  layouts: {
+    list(): Promise<SavedLayout[]>
+    save(layout: SavedLayout, replacing?: string): Promise<SavedLayout[]>
+    remove(name: string): Promise<SavedLayout[]>
+    current(): Promise<Layout | null>
+    setCurrent(layout: Layout): Promise<void>
+  }
   openExternal(url: string): Promise<void>
+  /** True only in a GLYPHH_BOT_SHOT run, so the screenshot script can set the scene. */
+  shot: boolean
 }

@@ -1,13 +1,18 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { Bot, Settings } from '../shared/types'
+import { normalizeCurrent, normalizeSaved, type Layout, type SavedLayout } from '../shared/layouts'
+import { normalizeLook, type Bot, type Settings } from '../shared/types'
 
 interface Data {
   bots: Bot[]
   settings: Settings
   elevenKey: string
   workspace: string
+  /** Your own layouts (the built-ins live in shared/layouts.ts). */
+  layouts: SavedLayout[]
+  /** The layout on screen when the app last closed. */
+  layout: Layout | null
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -28,25 +33,11 @@ const DEFAULT_BOTS: Bot[] = [
     id: 'juno',
     name: 'Juno',
     pronouns: 'she/her',
-    tagline: 'Makes it look unreal',
+    tagline: 'Makes it look right',
     personality:
-      'Creative director energy. Obsessed with color, type and vibes. Confident, warm, a little dramatic, says "okay wait" before every good idea.',
-    task: 'Design lead: owns the look and feel, layouts, colors, copy tone and anything a person sees.',
-    look: {
-      coat: '#b8794a',
-      mane: '#ff2bd6',
-      maneStyle: 'long',
-      top: 'crop',
-      topColor: '#14101f',
-      jeans: 'baggy',
-      jeansColor: '#5f7fd0',
-      sneakers: '#ffffff',
-      accessory: 'choker',
-      accent: '#ff2bd6',
-      lashes: true,
-      blaze: true,
-      freckles: false
-    },
+      'Design lead with strong taste. Obsessed with type, spacing and contrast. Confident and warm, says "okay wait" before every good idea.',
+    task: 'Design lead: owns the look and feel, layouts, type, copy tone and anything a person sees.',
+    look: { head: 'tall', tail: 'curl', eye: 'heart', extra: 'none', accessory: 'bow', pose: 'lean' },
     voiceId: 'cgSgspJ2msm6clMCkdW9',
     voiceName: 'Jessica',
     model: '',
@@ -61,21 +52,7 @@ const DEFAULT_BOTS: Bot[] = [
     personality:
       'Builder. Fast, funny, allergic to meetings. Talks like a speedrunner narrating a run. Hypes his teammates and owns his bugs.',
     task: 'Lead builder: writes the code, wires things together, keeps the project running.',
-    look: {
-      coat: '#4a382c',
-      mane: '#0e0e14',
-      maneStyle: 'mohawk',
-      top: 'hoodie',
-      topColor: '#16121f',
-      jeans: 'ripped',
-      jeansColor: '#34426e',
-      sneakers: '#0e0e14',
-      accessory: 'headphones',
-      accent: '#00e5ff',
-      lashes: false,
-      blaze: false,
-      freckles: false
-    },
+    look: { head: 'spiky', tail: 'bolt', eye: 'big', extra: 'bolt', accessory: 'headphones', pose: 'hop' },
     voiceId: 'TX3LPaxmHKxFdv7VOQHJ',
     voiceName: 'Liam',
     model: '',
@@ -86,25 +63,11 @@ const DEFAULT_BOTS: Bot[] = [
     id: 'rio',
     name: 'Rio',
     pronouns: 'they/them',
-    tagline: 'Knows a guy (the internet)',
+    tagline: 'Reads the docs',
     personality:
-      'Curious researcher. Calm, dry humor, loves a weird fact. Always checks the source and says what they are not sure about.',
+      'Curious researcher. Calm, dry humor, loves a strange fact. Always checks the source and says what they are not sure about.',
     task: 'Researcher: looks things up, reads docs, uses connectors and the web, brings back what the crew needs to know.',
-    look: {
-      coat: '#e6dfd2',
-      mane: '#7c3aed',
-      maneStyle: 'swoosh',
-      top: 'bomber',
-      topColor: '#2d3a2f',
-      jeans: 'skinny',
-      jeansColor: '#17171f',
-      sneakers: '#ff5a1f',
-      accessory: 'septum',
-      accent: '#c6ff00',
-      lashes: true,
-      blaze: false,
-      freckles: true
-    },
+    look: { head: 'round', tail: 'long', eye: 'side', extra: 'antenna', accessory: 'glasses', pose: 'turn' },
     voiceId: 'SAz9YHcvj6GT2YYXdXww',
     voiceName: 'River',
     model: '',
@@ -117,23 +80,9 @@ const DEFAULT_BOTS: Bot[] = [
     pronouns: 'he/they',
     tagline: 'Will find the bug',
     personality:
-      'The skeptic with a soft heart. Skater calm, asks "but does it actually work though", tests everything and gives props when it does.',
+      'The skeptic with a soft heart. Calm, asks "but does it actually work though", tests everything and gives credit when it does.',
     task: 'Tester and reviewer: runs it, breaks it, reviews the last turn and fixes what is wrong.',
-    look: {
-      coat: '#23232b',
-      mane: '#f4f4f5',
-      maneStyle: 'buzz',
-      top: 'flannel',
-      topColor: '#b91c1c',
-      jeans: 'shorts',
-      jeansColor: '#4b5a8f',
-      sneakers: '#ffd60a',
-      accessory: 'shades',
-      accent: '#ffd60a',
-      lashes: false,
-      blaze: true,
-      freckles: false
-    },
+    look: { head: 'folded', tail: 'spike', eye: 'sleepy', extra: 'none', accessory: 'shades', pose: 'stand' },
     voiceId: 'bIHbv24MWmeRgasZH3Fd',
     voiceName: 'Will',
     model: '',
@@ -144,25 +93,11 @@ const DEFAULT_BOTS: Bot[] = [
     id: 'mika',
     name: 'Mika',
     pronouns: 'she/they',
-    tagline: 'Keeps the plot',
+    tagline: 'Keeps the plan',
     personality:
-      'Organizer and hype captain. Bright, quick, zero tolerance for scope creep. Remembers what everybody said and what is still left.',
+      'Organizer. Bright, quick, zero tolerance for scope creep. Remembers what everybody said and what is still left.',
     task: 'Producer: keeps the plan, writes the notes and README, says what is done and what is next.',
-    look: {
-      coat: '#e9bd7c',
-      mane: '#2b1a12',
-      maneStyle: 'braids',
-      top: 'jersey',
-      topColor: '#3b0764',
-      jeans: 'skirt',
-      jeansColor: '#17171f',
-      sneakers: '#ff3b5c',
-      accessory: 'bandana',
-      accent: '#ff3b5c',
-      lashes: true,
-      blaze: false,
-      freckles: true
-    },
+    look: { head: 'classic', tail: 'curl', eye: 'star', extra: 'cape', accessory: 'scarf', pose: 'stand' },
     voiceId: 'FGY2WhTYpPnrIDTdsKH5',
     voiceName: 'Laura',
     model: '',
@@ -173,8 +108,13 @@ const DEFAULT_BOTS: Bot[] = [
 
 let data: Data | null = null
 
+/** GLYPHH_BOT_DATA points the app at another data folder (the screenshot runs use a scratch one). */
+export function dataDir(): string {
+  return process.env.GLYPHH_BOT_DATA || app.getPath('userData')
+}
+
 function file(): string {
-  return join(app.getPath('userData'), 'oliver.json')
+  return join(dataDir(), 'glyphh-bot.json')
 }
 
 export function load(): Data {
@@ -186,17 +126,19 @@ export function load(): Data {
     saved = {}
   }
   data = {
-    bots: saved.bots?.length ? saved.bots : DEFAULT_BOTS,
+    bots: (saved.bots?.length ? saved.bots : DEFAULT_BOTS).map((b) => ({ ...b, look: normalizeLook(b.look) })),
     settings: { ...DEFAULT_SETTINGS, ...(saved.settings ?? {}) },
     elevenKey: saved.elevenKey ?? '',
-    workspace: saved.workspace ?? ''
+    workspace: saved.workspace ?? '',
+    layouts: normalizeSaved(saved.layouts),
+    layout: normalizeCurrent(saved.layout)
   }
   return data
 }
 
 export function save(): void {
   if (!data) return
-  mkdirSync(app.getPath('userData'), { recursive: true })
+  mkdirSync(dataDir(), { recursive: true })
   writeFileSync(file(), JSON.stringify(data, null, 2), { mode: 0o600 })
 }
 

@@ -17,7 +17,7 @@ import type {
   RunResult,
   Voice
 } from '../shared/types'
-import { ACCESSORIES, JEANS, MANES, TOPS } from '../shared/types'
+import { ACCESSORIES, EXTRAS, EYES, HEADS, POSES, TAILS, normalizeLook } from '../shared/types'
 import { load } from './store'
 
 type Sdk = typeof import('@anthropic-ai/claude-agent-sdk')
@@ -386,18 +386,16 @@ export function answerPermission(id: string, decision: PermissionDecision): void
 
 // ----------------------------------------------- a bot from a prompt
 
-const HEX = /^#[0-9a-fA-F]{6}$/
-
-/** Turns "a skater girl who tests games" into a whole bot: name, voice, personality and look. */
+/** Turns "a calm tester who roasts bugs" into a whole bot: name, voice, personality and cat. */
 export async function generateBot(prompt: string, voices: Voice[]): Promise<Partial<Bot>> {
   const { query } = await sdk()
   const voiceList = voices
     .slice(0, 40)
     .map((v) => `${v.id}: ${v.name} (${v.desc})`)
     .join('\n')
-  const system = `You design characters for Oliver, a bot OS where every bot is a horse styled like an edgy teen in 2026: streetwear, jeans, chunky sneakers, dyed manes, piercings, dark fits with one loud neon accent. Characters have attitude but are kind and school-appropriate.
+  const system = `You design characters for Glyphh Bot, a bot OS where every bot is Spike, the Glyphh alien cat, drawn in black and white: one big ringed eye, a tall ear, a tail. Bots differ by the cat's parts, an accessory and a pose, and by how they talk. Characters have attitude but are kind.
 Reply with one JSON object and nothing else:
-{"name": short first name, "pronouns": "she/her" | "he/him" | "they/them" | a mix, "tagline": 2-5 fun words, "personality": 2 sentences on how they talk and act, "task": 1 sentence on their job in a crew that builds things, "voiceId": one id from the voice list that fits, "look": {"coat": hex horse coat color, "mane": hex (natural or dyed), "maneStyle": one of ${MANES.join('|')}, "top": one of ${TOPS.join('|')}, "topColor": hex, "jeans": one of ${JEANS.join('|')}, "jeansColor": hex denim, "sneakers": hex, "accessory": one of ${ACCESSORIES.join('|')}, "accent": hex bright accent, "lashes": boolean, "blaze": boolean (white stripe on the face), "freckles": boolean}}
+{"name": short first name, "pronouns": "she/her" | "he/him" | "they/them" | a mix, "tagline": 2-5 plain words, "personality": 2 sentences on how they talk and act, "task": 1 sentence on their job in a crew that builds things, "voiceId": one id from the voice list that fits, "look": {"head": one of ${HEADS.join('|')}, "tail": one of ${TAILS.join('|')}, "eye": one of ${EYES.join('|')} (the expression), "extra": one of ${EXTRAS.join('|')}, "accessory": one of ${ACCESSORIES.join('|')}, "pose": one of ${POSES.join('|')}}}
 Voice list:
 ${voiceList || '(none: use "")'}`
   let text = ''
@@ -422,10 +420,6 @@ ${voiceList || '(none: use "")'}`
   }
   const json = text.slice(text.indexOf('{'), text.lastIndexOf('}') + 1)
   const raw = JSON.parse(json) as Record<string, unknown>
-  const look = (raw.look ?? {}) as Record<string, unknown>
-  const hex = (v: unknown, d: string): string => (typeof v === 'string' && HEX.test(v) ? v : d)
-  const one = <T extends string>(v: unknown, all: T[], d: T): T =>
-    all.includes(v as T) ? (v as T) : d
   const voice = voices.find((v) => v.id === raw.voiceId)
   return {
     name: String(raw.name ?? 'New bot').slice(0, 24),
@@ -434,20 +428,6 @@ ${voiceList || '(none: use "")'}`
     personality: String(raw.personality ?? '').slice(0, 600),
     task: String(raw.task ?? '').slice(0, 400),
     ...(voice ? { voiceId: voice.id, voiceName: voice.name } : {}),
-    look: {
-      coat: hex(look.coat, '#c98a5a'),
-      mane: hex(look.mane, '#3b2a20'),
-      maneStyle: one(look.maneStyle, MANES, 'long'),
-      top: one(look.top, TOPS, 'hoodie'),
-      topColor: hex(look.topColor, '#7c3aed'),
-      jeans: one(look.jeans, JEANS, 'baggy'),
-      jeansColor: hex(look.jeansColor, '#6f8fd8'),
-      sneakers: hex(look.sneakers, '#ffffff'),
-      accessory: one(look.accessory, ACCESSORIES, 'none'),
-      accent: hex(look.accent, '#e879f9'),
-      lashes: !!look.lashes,
-      blaze: !!look.blaze,
-      freckles: !!look.freckles
-    }
+    look: normalizeLook(raw.look)
   }
 }

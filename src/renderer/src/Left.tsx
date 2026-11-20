@@ -1,7 +1,14 @@
-import { Horse } from './Horse'
-import { api, refreshProbe, set, toast, useStore } from './store'
+import { botPanel } from '../../shared/layouts'
+import { Cat } from './Cat'
+import { api, inLayout, openPanel, refreshProbe, set, toast, useStore } from './store'
 
 const STATUS_LABEL = { idle: '', thinking: 'working', speaking: 'talking', waiting: 'waiting' } as const
+
+/** Show a room in the main Chat panel, opening the Chat panel when the layout has none. */
+function goRoom(room: string): void {
+  set({ room })
+  if (!inLayout('chat')) openPanel('chat')
+}
 
 function Bots(): JSX.Element {
   const bots = useStore((s) => s.bots)
@@ -11,11 +18,11 @@ function Bots(): JSX.Element {
 
   return (
     <div className="rail-scroll">
-      <button className={room === 'crew' ? 'bot crew on' : 'bot crew'} onClick={() => set({ room: 'crew' })}>
+      <button className={room === 'crew' ? 'bot crew on' : 'bot crew'} onClick={() => goRoom('crew')}>
         <div className="stack">
           {crew.slice(0, 4).map((b) => (
             <span key={b.id} className="mini">
-              <Horse look={b.look} size={26} />
+              <Cat look={b.look} size={26} />
             </span>
           ))}
         </div>
@@ -29,14 +36,9 @@ function Bots(): JSX.Element {
       {bots.map((b) => {
         const st = status[b.id] ?? 'idle'
         return (
-          <div
-            key={b.id}
-            className={`bot ${room === b.id ? 'on' : ''} ${st}`}
-            onClick={() => set({ room: b.id })}
-            style={{ ['--accent' as string]: b.look.accent }}
-          >
+          <div key={b.id} className={`bot ${room === b.id ? 'on' : ''} ${st}`} onClick={() => goRoom(b.id)}>
             <span className="ava">
-              <Horse look={b.look} size={46} speaking={st === 'speaking'} />
+              <Cat look={b.look} size={44} speaking={st === 'speaking'} busy={st === 'thinking'} />
             </span>
             <div className="meta">
               <b>
@@ -54,6 +56,16 @@ function Bots(): JSX.Element {
                 }}
               >
                 {b.inCrew ? 'crew' : 'bench'}
+              </button>
+              <button
+                className="pill"
+                title="Open this bot as its own panel in the layout"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  openPanel(botPanel(b.id))
+                }}
+              >
+                panel
               </button>
               <button
                 className="pill"
@@ -105,11 +117,11 @@ function Connections(): JSX.Element {
               </div>
             </div>
             <div className="row">
-              <button className="btn ghost" onClick={login} disabled={loggingIn}>
+              <button className="btn" onClick={login} disabled={loggingIn}>
                 Switch account
               </button>
               <button
-                className="btn ghost"
+                className="btn"
                 onClick={async () => {
                   set({ auth: await api.auth.logout(), probe: null })
                 }}
@@ -120,8 +132,8 @@ function Connections(): JSX.Element {
           </>
         ) : (
           <>
-            <p className="dim">Not connected. Oliver uses your own Claude login.</p>
-            <button className="btn" onClick={login} disabled={loggingIn}>
+            <p className="dim">Not connected. Glyphh Bot uses your own Claude login.</p>
+            <button className="btn primary" onClick={login} disabled={loggingIn}>
               {loggingIn ? 'Waiting for Claude…' : 'Connect to Claude'}
             </button>
           </>
@@ -143,7 +155,7 @@ function Connections(): JSX.Element {
           <small>{c.status === 'needs-auth' ? 'needs sign-in' : c.status}</small>
         </div>
       ))}
-      <button className="btn ghost wide" onClick={() => void api.openExternal('https://claude.ai/settings/connectors')}>
+      <button className="btn wide" onClick={() => void api.openExternal('https://claude.ai/settings/connectors')}>
         Add connectors on claude.ai ↗
       </button>
 
@@ -151,15 +163,9 @@ function Connections(): JSX.Element {
       <div className="conn">
         <span className={`dot ${settings.elevenKeySource === 'none' ? 'bad' : 'ok'}`} />
         <b>ElevenLabs</b>
-        <small>
-          {settings.elevenKeySource === 'settings'
-            ? 'your key'
-            : settings.elevenKeySource === 'glyphh'
-              ? 'glyphh server key'
-              : 'no key'}
-        </small>
+        <small>{settings.elevenKeySource === 'settings' ? 'your key' : settings.elevenKeySource === 'glyphh' ? 'glyphh server key' : 'no key'}</small>
       </div>
-      <button className="btn ghost wide" onClick={() => set({ modal: { kind: 'settings' } })}>
+      <button className="btn wide" onClick={() => set({ modal: { kind: 'settings' } })}>
         Voice settings
       </button>
     </div>

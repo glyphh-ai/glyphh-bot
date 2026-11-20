@@ -15,34 +15,46 @@ self.MonacoEnvironment = {
   }
 }
 
-monaco.editor.defineTheme('oliver', {
+// glyphh.ai's black and white: weight and grey carry the syntax, not colour.
+monaco.editor.defineTheme('glyphh', {
   base: 'vs-dark',
   inherit: true,
   rules: [
-    { token: 'comment', foreground: '8b7fb8', fontStyle: 'italic' },
-    { token: 'keyword', foreground: 'e879f9' },
-    { token: 'string', foreground: 'a3e635' },
-    { token: 'number', foreground: 'fbbf24' },
-    { token: 'type', foreground: '22d3ee' },
-    { token: 'tag', foreground: 'f472b6' },
-    { token: 'attribute.name', foreground: 'c4b5fd' },
-    { token: 'delimiter', foreground: 'b3a8d6' }
+    { token: '', foreground: 'eaeaea' },
+    { token: 'comment', foreground: '9a9a9a', fontStyle: 'italic' },
+    { token: 'keyword', foreground: 'ffffff', fontStyle: 'bold' },
+    { token: 'string', foreground: 'c8c8c8' },
+    { token: 'number', foreground: 'ffffff' },
+    { token: 'type', foreground: 'ffffff', fontStyle: 'underline' },
+    { token: 'tag', foreground: 'ffffff', fontStyle: 'bold' },
+    { token: 'attribute.name', foreground: 'c8c8c8' },
+    { token: 'delimiter', foreground: 'a6a6a6' }
   ],
   colors: {
-    'editor.background': '#0b0618',
-    'editor.foreground': '#efeaff',
-    'editor.lineHighlightBackground': '#1a0f33',
-    'editorLineNumber.foreground': '#5b4b8a',
-    'editorLineNumber.activeForeground': '#c4b5fd',
-    'editorCursor.foreground': '#e879f9',
-    'editor.selectionBackground': '#7c3aed66',
-    'editor.inactiveSelectionBackground': '#7c3aed33',
-    'editorIndentGuide.background1': '#1f1440',
-    'editorWidget.background': '#130a26',
-    'editorWidget.border': '#3b2a6b',
-    'scrollbarSlider.background': '#7c3aed44',
-    'scrollbarSlider.hoverBackground': '#a855f766',
-    'minimap.background': '#0b0618'
+    'editor.background': '#000000',
+    'editor.foreground': '#eaeaea',
+    'editor.lineHighlightBackground': '#0d0d0d',
+    'editor.lineHighlightBorder': '#141414',
+    'editorLineNumber.foreground': '#999999',
+    'editorBracketHighlight.foreground1': '#c8c8c8',
+    'editorBracketHighlight.foreground2': '#c8c8c8',
+    'editorBracketHighlight.foreground3': '#c8c8c8',
+    'editorBracketHighlight.foreground4': '#c8c8c8',
+    'editorBracketHighlight.foreground5': '#c8c8c8',
+    'editorBracketHighlight.foreground6': '#c8c8c8',
+    'editorBracketMatch.background': '#ffffff1a',
+    'editorBracketMatch.border': '#5a5a5a',
+    'editorLineNumber.activeForeground': '#c8c8c8',
+    'editorCursor.foreground': '#ffffff',
+    'editor.selectionBackground': '#ffffff33',
+    'editor.inactiveSelectionBackground': '#ffffff1a',
+    'editorIndentGuide.background1': '#242424',
+    'editorWidget.background': '#0d0d0d',
+    'editorWidget.border': '#5a5a5a',
+    'focusBorder': '#c68cff',
+    'scrollbarSlider.background': '#ffffff22',
+    'scrollbarSlider.hoverBackground': '#ffffff44',
+    'minimap.background': '#000000'
   }
 })
 

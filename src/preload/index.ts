@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { AgentEvent, OliverApi } from '../shared/types'
+import type { AgentEvent, GlyphhBotApi } from '../shared/types'
 
 const call =
   (channel: string) =>
@@ -12,7 +12,7 @@ function on<T>(channel: string, cb: (v: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, fn)
 }
 
-const api: OliverApi = {
+const api: GlyphhBotApi = {
   auth: {
     status: call('auth:status'),
     login: call('auth:login'),
@@ -50,7 +50,15 @@ const api: OliverApi = {
     tree: call('ws:tree'),
     read: call('ws:read'),
     write: call('ws:write'),
-    reveal: call('ws:reveal')
+    reveal: call('ws:reveal'),
+    list: call('ws:list'),
+    search: call('ws:search'),
+    mkdir: call('ws:mkdir'),
+    rename: call('ws:rename'),
+    trash: call('ws:trash'),
+    exists: call('ws:exists'),
+    diff: call('ws:diff'),
+    pickFile: call('ws:pickFile')
   },
   git: {
     beginTurn: call('git:beginTurn'),
@@ -61,7 +69,15 @@ const api: OliverApi = {
     diff: call('git:diff'),
     branch: call('git:branch')
   },
-  openExternal: call('openExternal')
+  layouts: {
+    list: call('layouts:list'),
+    save: call('layouts:save'),
+    remove: call('layouts:remove'),
+    current: call('layouts:current'),
+    setCurrent: call('layouts:setCurrent')
+  },
+  openExternal: call('openExternal'),
+  shot: new URLSearchParams(location.search).has('shot')
 }
 
-contextBridge.exposeInMainWorld('oliver', api)
+contextBridge.exposeInMainWorld('glyphhBot', api)
