@@ -30,6 +30,10 @@ A desktop app for a crew of Claude bots. Each bot is Spike, the Glyphh cat, in i
 
 ![Connections](docs/6-connections.png)
 
+**Account.** The button at the foot of the left rail opens upward: the account, Settings, Switch account and Log out.
+
+![The account menu](docs/6b-account.png)
+
 **Open anything (⌘K)** and the layout manager:
 
 ![The command center](docs/7-command-center.png)
