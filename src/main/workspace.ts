@@ -142,6 +142,26 @@ export async function rename(from: string, to: string): Promise<void> {
   await files.renamePath((await current()).path, from, to)
 }
 
+/** A file the person attached to a message, copied into the folder's attachments/ so every bot can read it. Returns its path. */
+export async function attach(name: string, bytes: Uint8Array): Promise<string> {
+  const { path } = await current()
+  const rel = files.attachmentPath(name, (p) => existsSync(join(path, p)))
+  const full = inside(path, rel)
+  mkdirSync(dirname(full), { recursive: true })
+  writeFileSync(full, Buffer.from(bytes))
+  return rel
+}
+
+/** A file's size, or null when it is not there. */
+export async function stat(p: string): Promise<{ size: number; dir: boolean } | null> {
+  try {
+    const s = statSync(inside((await current()).path, p))
+    return { size: s.size, dir: s.isDirectory() }
+  } catch {
+    return null
+  }
+}
+
 export async function exists(p: string): Promise<boolean> {
   return existsSync(inside((await current()).path, p))
 }

@@ -11,7 +11,9 @@ import {
 } from 'electron'
 import { normalizeCurrent, removeLayout, saveLayout, type Layout, type SavedLayout } from '../shared/layouts'
 import { normalizeLook, type Bot, type PermissionDecision, type RunParams, type Settings, type SettingsView, type Voice } from '../shared/types'
+import { normalizeRecents, removeRecent, setArchivedRecent, setPinnedRecent, upsertRecent, type Recent } from '../shared/recents'
 import * as claude from './claude'
+import { connectorIcon } from './icons'
 import { load, update } from './store'
 import * as voice from './voice'
 import * as ws from './workspace'
@@ -93,6 +95,7 @@ app.whenReady().then(() => {
   handle('claude:probe', async (force?: boolean) =>
     claude.probe((await ws.current()).path, !!force)
   )
+  handle('claude:icon', (domain: string) => connectorIcon(domain))
 
   handle('agent:run', (p: RunParams) => claude.run(win!.webContents, p))
   handle('agent:stop', (runId: string) => claude.stop(runId))
@@ -151,6 +154,15 @@ app.whenReady().then(() => {
     const r = await dialog.showOpenDialog(win!, { title: 'Open a file in the browser', properties: ['openFile'] })
     return r.canceled || !r.filePaths[0] ? null : r.filePaths[0]
   })
+
+  handle('ws:attach', (name: string, bytes: Uint8Array) => ws.attach(name, bytes))
+  handle('ws:stat', (p: string) => ws.stat(p))
+
+  handle('recents:list', () => load().recents)
+  handle('recents:save', (r: Recent) => update((d) => (d.recents = normalizeRecents(upsertRecent(d.recents, r)))).recents)
+  handle('recents:pin', (id: string, on: boolean) => update((d) => (d.recents = setPinnedRecent(d.recents, id, on))).recents)
+  handle('recents:archive', (id: string, on: boolean) => update((d) => (d.recents = setArchivedRecent(d.recents, id, on))).recents)
+  handle('recents:remove', (id: string) => update((d) => (d.recents = removeRecent(d.recents, id))).recents)
 
   handle('layouts:list', () => load().layouts)
   handle('layouts:save', (l: SavedLayout, replacing?: string) => {

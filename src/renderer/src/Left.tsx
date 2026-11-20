@@ -1,13 +1,44 @@
+import { useEffect, useState } from 'react'
+import { connectorLabel } from '../../shared/connectors'
 import { botPanel } from '../../shared/layouts'
 import { Cat } from './Cat'
-import { api, inLayout, openPanel, refreshProbe, set, toast, useStore } from './store'
+import { api, browse, openPanel, refreshProbe, set, toast, useStore } from './store'
+
+const CONNECTORS_URL = 'https://claude.ai/settings/connectors'
+
+const icons = new Map<string, Promise<string | null>>()
+
+/** A connector's service icon, as Claude shows it (cached on disk by the main process); a letter tile when there is none. */
+export function ConnectorIcon({ name, domain, size = 20 }: { name: string; domain?: string; size?: number }): JSX.Element {
+  const [src, setSrc] = useState<string | null>(null)
+  useEffect(() => {
+    if (!domain) return
+    let p = icons.get(domain)
+    if (!p) {
+      p = api.claude.icon(domain).catch(() => null)
+      icons.set(domain, p)
+    }
+    let live = true
+    void p.then((s) => live && setSrc(s))
+    return () => {
+      live = false
+    }
+  }, [domain])
+  return src ? (
+    <img className="cicon" src={src} width={size} height={size} alt="" />
+  ) : (
+    <span className="cicon blank" style={{ width: size, height: size }}>
+      {connectorLabel(name).replace(/[^a-z0-9]/gi, '').charAt(0).toUpperCase() || '?'}
+    </span>
+  )
+}
 
 const STATUS_LABEL = { idle: '', thinking: 'working', speaking: 'talking', waiting: 'waiting' } as const
 
-/** Show a room in the main Chat panel, opening the Chat panel when the layout has none. */
+/** Show a room in the chat (putting the chat back if another panel fills the desk). */
 function goRoom(room: string): void {
   set({ room })
-  if (!inLayout('chat')) openPanel('chat')
+  openPanel('chat')
 }
 
 function Bots(): JSX.Element {
@@ -149,14 +180,15 @@ function Connections(): JSX.Element {
       {!probe && <p className="dim pad">{probing ? 'Asking Claude what is connected…' : 'Connect to Claude to see them.'}</p>}
       {probe?.connectors.length === 0 && <p className="dim pad">No connectors yet.</p>}
       {probe?.connectors.map((c) => (
-        <div key={c.name} className="conn" title={c.error}>
+        <div key={c.name} className="conn" title={c.error ?? c.name}>
+          <ConnectorIcon name={c.name} domain={c.domain} />
+          <b>{connectorLabel(c.name)}</b>
           <span className={`dot ${c.status === 'connected' ? 'ok' : c.status === 'needs-auth' ? 'warn' : 'bad'}`} />
-          <b>{c.name.replace(/^claude\.ai /, '')}</b>
-          <small>{c.status === 'needs-auth' ? 'needs sign-in' : c.status}</small>
+          <small>{c.status === 'needs-auth' ? 'sign in' : c.status === 'connected' ? 'on' : c.status}</small>
         </div>
       ))}
-      <button className="btn wide" onClick={() => void api.openExternal('https://claude.ai/settings/connectors')}>
-        Add connectors on claude.ai ↗
+      <button className="btn wide" onClick={() => browse(CONNECTORS_URL)}>
+        + Add connectors
       </button>
 
       <div className="rail-label">Voice</div>

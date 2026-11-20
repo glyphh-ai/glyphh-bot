@@ -1,209 +1,198 @@
 import { describe, expect, it } from 'vitest'
 import {
-  allLayouts,
-  applyDrop,
   BUILTIN_LAYOUTS,
-  canMergeDown,
-  canMergeRight,
-  cellAt,
-  closeCell,
-  dropModeAt,
-  emptyGrid,
-  findLayout,
-  gridCells,
-  gridFromCells,
+  CHAT,
+  closePanel,
+  deskRects,
+  frameOf,
+  gridFromFrames,
+  isPanel,
   mergeDown,
-  mergeRight,
-  moveSeam,
   normalizeCurrent,
   normalizeSaved,
   openLayout,
-  placePanel,
-  removeLayout,
-  resizeGrid,
+  openPanel,
+  openPanels,
   sameShape,
-  saveError,
   saveLayout,
-  setSticky,
-  splitCell,
+  setPinned,
+  splitFrame,
+  stackSlots,
   toSaved,
-  type Grid,
-  type SavedLayout
+  withPanels,
+  type Layout,
+  type Rect
 } from '../src/shared/layouts'
 
-/** Every position covered by exactly one cell. */
-function covered(g: Grid): boolean {
-  for (let y = 0; y < g.rows; y++)
-    for (let x = 0; x < g.cols; x++) {
-      const n = g.cells.filter((c) => x >= c.col && x < c.col + c.colSpan && y >= c.row && y < c.row + c.rowSpan).length
-      if (n !== 1) return false
-    }
-  return true
+const r3 = (r: Rect): Rect => ({ x: +r.x.toFixed(3), y: +r.y.toFixed(3), w: +r.w.toFixed(3), h: +r.h.toFixed(3) })
+const fresh = (name = 'Default'): Layout => openLayout(BUILTIN_LAYOUTS.find((l) => l.name === name)!)
+const open = (l: Layout, ...ids: string[]): Layout => ids.reduce((x, id) => openPanel(x, id).layout, l)
+/** Each open panel's place in the panel area, as fractions of the area. */
+function places(l: Layout): Record<string, Rect> {
+  const r = deskRects(l)
+  const a = r.area!
+  return Object.fromEntries(
+    r.panels.filter((p) => !p.hidden).map((p) => [p.panelId, r3({ x: (p.rect.x - a.x) / a.w, y: p.rect.y, w: p.rect.w / a.w, h: p.rect.h })])
+  )
 }
 
-const dev = (): SavedLayout => BUILTIN_LAYOUTS.find((l) => l.name === 'Dev')!
-
-describe('grid', () => {
-  it('starts as 1x1 cells and clamps its size', () => {
-    const g = emptyGrid(3, 2)
-    expect(g.cells).toHaveLength(6)
-    expect(covered(g)).toBe(true)
-    expect(emptyGrid(99, 0)).toMatchObject({ cols: 6, rows: 1 })
-  })
-
-  it('merges right and down only into one matching neighbour, and splits back', () => {
-    const g = emptyGrid(2, 2)
-    expect(canMergeRight(g, 0)).toBe(true)
-    expect(canMergeRight(g, 1)).toBe(false)
-    const i = mergeDown(g, 0)
-    expect(g.cells[i]).toMatchObject({ col: 0, row: 0, rowSpan: 2 })
-    expect(covered(g)).toBe(true)
-    // the merged column can't merge right into a single 1x1
-    expect(canMergeRight(g, i)).toBe(false)
-    expect(canMergeDown(g, cellAt(g, 1, 0))).toBe(true)
-    g.cells[i]!.panelId = 'chat'
-    splitCell(g, i)
-    expect(g.cells).toHaveLength(4)
-    expect(g.cells.find((c) => c.col === 0 && c.row === 0)!.panelId).toBe('chat')
-    expect(covered(g)).toBe(true)
-  })
-
-  it('resizes keeping what fits and filling new positions', () => {
-    const g = emptyGrid(2, 2)
-    mergeRight(g, 0)
-    g.cells[0]!.panelId = 'files'
-    resizeGrid(g, 1, 3)
-    expect(g.cols).toBe(1)
-    expect(g.cells[0]).toMatchObject({ panelId: 'files', colSpan: 1 })
-    expect(covered(g)).toBe(true)
-  })
-
-  it('keeps one sticky cell at most and never an empty one', () => {
-    const g = gridFromCells(2, 1, [{ panelId: 'chat', col: 0, row: 0 }, { panelId: 'browser', col: 1, row: 0 }])
-    setSticky(g, 0, true)
-    setSticky(g, 1, true)
-    expect(g.cells.filter((c) => c.sticky)).toHaveLength(1)
-    expect(g.cells[1]!.sticky).toBe(true)
-    g.cells[0]!.panelId = ''
-    setSticky(g, 0, true)
-    expect(g.cells.some((c) => c.sticky)).toBe(false)
-  })
-
-  it('drops: the middle swaps, an edge inserts, a full-height column moves as a column', () => {
-    expect(dropModeAt(0.5, 0.5)).toBe('swap')
-    expect(dropModeAt(0.1, 0.5)).toBe('before')
-    expect(dropModeAt(0.9, 0.5)).toBe('after')
-
-    const g = gridFromCells(3, 1, [
-      { panelId: 'a', col: 0, row: 0 },
-      { panelId: 'b', col: 1, row: 0 },
-      { panelId: 'c', col: 2, row: 0 }
+describe('stacking: full, under, full, under', () => {
+  it('slots for 1 to 6 panels', () => {
+    expect(stackSlots(1)).toEqual([{ x: 0, y: 0, w: 1, h: 1 }])
+    expect(stackSlots(2)).toEqual([
+      { x: 0, y: 0, w: 1, h: 0.5 },
+      { x: 0, y: 0.5, w: 1, h: 0.5 }
     ])
-    applyDrop(g, 0, 2, 'swap')
-    expect(gridCells(g).map((c) => c.panelId)).toEqual(['c', 'b', 'a'])
-
-    const l = openLayout(dev())
-    const browser = l.cells.findIndex((c) => c.panelId === 'browser')
-    const files = l.cells.findIndex((c) => c.panelId === 'files')
-    // browser is a full-height column: dropping it before the files column moves the column
-    applyDrop(l, browser, files, 'before')
-    expect(l.cells.find((c) => c.panelId === 'browser')!.col).toBe(0)
-    expect(covered(l)).toBe(true)
-  })
-
-  it('skips saved cells that overlap or fall outside', () => {
-    const g = gridFromCells(2, 1, [
-      { panelId: 'a', col: 0, row: 0, colSpan: 2 },
-      { panelId: 'b', col: 1, row: 0 },
-      { panelId: 'c', col: 5, row: 0 }
+    expect(stackSlots(3).map(r3)).toEqual([
+      { x: 0, y: 0, w: 0.5, h: 0.5 },
+      { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0, w: 0.5, h: 1 }
     ])
-    expect(g.cells).toHaveLength(1)
-    expect(g.cells[0]!.panelId).toBe('a')
+    expect(stackSlots(4).map(r3)).toEqual([
+      { x: 0, y: 0, w: 0.5, h: 0.5 },
+      { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0, w: 0.5, h: 0.5 },
+      { x: 0.5, y: 0.5, w: 0.5, h: 0.5 }
+    ])
+    expect(stackSlots(5).map(r3)[4]).toEqual({ x: 0.667, y: 0, w: 0.333, h: 1 })
+    expect(stackSlots(6).map(r3)[5]).toEqual({ x: 0.667, y: 0.5, w: 0.333, h: 0.5 })
+  })
+
+  it('opening 1 to 4 panels on the desk', () => {
+    let l = fresh()
+    expect(deskRects(l).area).toBeNull()
+    expect(deskRects(l).chat).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+    l = open(l, 'files')
+    expect(places(l)).toEqual({ files: { x: 0, y: 0, w: 1, h: 1 } })
+    l = open(l, 'browser')
+    expect(places(l)).toEqual({ files: { x: 0, y: 0, w: 1, h: 0.5 }, browser: { x: 0, y: 0.5, w: 1, h: 0.5 } })
+    l = open(l, 'editor')
+    expect(places(l).editor).toEqual({ x: 0.5, y: 0, w: 0.5, h: 1 })
+    l = open(l, 'diff')
+    expect(places(l).diff).toEqual({ x: 0.5, y: 0.5, w: 0.5, h: 0.5 })
+    expect(places(l).editor).toEqual({ x: 0.5, y: 0, w: 0.5, h: 0.5 })
+  })
+
+  it('closing reflows: an emptied column goes, its partner fills the height', () => {
+    let l = open(fresh(), 'files', 'browser', 'editor', 'diff')
+    l = closePanel(l, 'browser')
+    expect(places(l)).toEqual({
+      files: { x: 0, y: 0, w: 0.5, h: 0.5 },
+      editor: { x: 0, y: 0.5, w: 0.5, h: 0.5 },
+      diff: { x: 0.5, y: 0, w: 0.5, h: 1 }
+    })
+    l = closePanel(l, 'editor')
+    expect(places(l)).toEqual({ files: { x: 0, y: 0, w: 1, h: 0.5 }, diff: { x: 0, y: 0.5, w: 1, h: 0.5 } })
+    l = closePanel(closePanel(l, 'files'), 'diff')
+    expect(deskRects(l).area).toBeNull()
+    expect(deskRects(l).chat!.w).toBe(1)
+  })
+
+  it('re-opening an open panel focuses it instead of opening it twice', () => {
+    const l = open(fresh(), 'files', 'browser')
+    const again = openPanel(l, 'files')
+    expect(again.how).toBe('already')
+    expect(openPanels(again.layout)).toEqual(['files', 'browser'])
+    expect(openPanel(l, CHAT).how).toBe('chat')
+  })
+
+  it('expand fills the desk with one panel and hides the rest; toggled back it returns', () => {
+    const l = open(fresh(), 'files', 'browser')
+    const ex = deskRects(l, 'browser')
+    expect(ex.chat).toBeNull()
+    expect(ex.panels.find((p) => p.panelId === 'browser')).toMatchObject({ rect: { x: 0, y: 0, w: 1, h: 1 }, hidden: false })
+    expect(ex.panels.find((p) => p.panelId === 'files')!.hidden).toBe(true)
+    expect(deskRects(l, null).panels.every((p) => !p.hidden)).toBe(true)
+    expect(deskRects(l, CHAT).chat).toEqual({ x: 0, y: 0, w: 1, h: 1 })
+  })
+
+  it('keeps the chat at its minimum width', () => {
+    const l = open(fresh(), 'files')
+    expect(deskRects(l, null, false, 0.5).chat!.w).toBe(0.5)
+    expect(deskRects(l, null, false, 0.1).chat!.w).toBe(l.chatWidth)
   })
 })
 
-describe('seams', () => {
-  it('moves a seam and keeps 8% on each side', () => {
-    expect(moveSeam([0.5, 0.5], 0, 0.3)).toEqual([0.3, 0.7])
-    expect(moveSeam([0.5, 0.5], 0, 0)).toEqual([0.08, 0.92])
-    expect(moveSeam([0.25, 0.25, 0.5], 1, 0.9)).toEqual([0.25, 0.65, 0.1])
-    expect(moveSeam([0.25, 0.25, 0.5], 1, 0.99)).toEqual([0.25, 0.67, 0.08])
-    expect(moveSeam([0.5, 0.5], 1, 0.3)).toEqual([0.5, 0.5])
-  })
-})
-
-describe('saved layouts', () => {
-  it('opens a built-in and saves it back to the same shape', () => {
-    const l = openLayout(dev())
-    expect(l.cells.map((c) => c.panelId).filter(Boolean).sort()).toEqual(['browser', 'diff', 'editor', 'files'])
-    expect(l.colWidths).toEqual([0.22, 0.42, 0.36])
-    expect(sameShape(toSaved(l), dev())).toBe(true)
-    expect(sameShape(toSaved(closeCell(l, 0)), dev())).toBe(false)
+describe('layouts and pins', () => {
+  it('a layout with empty frames draws only the panels that are open', () => {
+    const side = fresh('Side by side')
+    expect(deskRects(side).area).toBeNull()
+    const one = open(side, 'browser')
+    const r = deskRects(one)
+    expect(r.frames).toHaveLength(1)
+    expect(places(one)).toEqual({ browser: { x: 0, y: 0, w: 1, h: 1 } })
+    // The second panel stacks under the first, not into the empty frame.
+    expect(places(open(one, 'files')).files).toEqual({ x: 0, y: 0.5, w: 1, h: 0.5 })
   })
 
-  it('refuses no name, no panels and built-in names', () => {
-    const base = toSaved(openLayout(dev()), 'Mine')
-    expect(saveError({ ...base, name: '  ' })).toMatch(/name/)
-    expect(saveError({ ...base, cells: [] })).toMatch(/panel/)
-    expect(saveError({ ...base, name: 'dev' })).toMatch(/built-in/)
-    expect(saveError(base)).toBeNull()
-    expect(() => saveLayout([], { ...base, name: 'Chat' })).toThrow(/built-in/)
+  it('a pinned frame takes every new panel', () => {
+    const l = fresh('Side by side')
+    setPinned(l, 1, true)
+    const o = openPanel(l, 'files')
+    expect(o.how).toBe('pinned')
+    expect(o.how !== 'chat' && o.frame).toBe(1)
+    const two = open(o.layout, 'diff')
+    expect(frameOf(two, 'diff')).toBe(1)
+    expect(places(two)).toEqual({ files: { x: 0, y: 0, w: 1, h: 0.5 }, diff: { x: 0, y: 0.5, w: 1, h: 0.5 } })
+    // Into a frame by hand: both frames show, side by side.
+    const both = openPanel(two, 'browser', 0).layout
+    expect(places(both).browser).toEqual({ x: 0, y: 0, w: 0.5, h: 1 })
+    expect(deskRects(both).exact).toBe(true)
   })
 
-  it('saves, replaces by name in any case, renames and removes', () => {
-    const base = toSaved(openLayout(dev()), 'Mine')
-    let list = saveLayout([], base, undefined, 1)
-    expect(list).toHaveLength(1)
-    expect(list[0]).toMatchObject({ name: 'Mine', updatedAt: 1 })
-
-    list = saveLayout(list, { ...base, name: 'MINE', cols: 2 }, undefined, 2)
-    expect(list).toHaveLength(1)
-    expect(list[0]).toMatchObject({ name: 'MINE', cols: 2, updatedAt: 2 })
-
-    list = saveLayout(list, { ...base, name: 'Work' }, 'MINE', 3)
-    expect(list.map((l) => l.name)).toEqual(['Work'])
-
-    list = saveLayout(list, { ...base, name: 'Other' }, undefined, 4)
-    expect(allLayouts(list).map((l) => l.name)).toEqual([...BUILTIN_LAYOUTS.map((l) => l.name), 'Work', 'Other'])
-    expect(findLayout(list, 'work')!.name).toBe('Work')
-    expect(removeLayout(list, 'WORK').map((l) => l.name)).toEqual(['Other'])
+  it('pins are saved with the layout and come back', () => {
+    const l = fresh('Side by side')
+    setPinned(l, 1, true)
+    const saved = saveLayout([], toSaved(l, 'Mine'))
+    expect(saved[0]!.frames[1]!.pinned).toBe(true)
+    const back = openLayout(normalizeSaved(JSON.parse(JSON.stringify(saved)))[0]!)
+    expect(back.frames[1]!.pinned).toBe(true)
+    expect(sameShape(toSaved(back), saved[0]!)).toBe(true)
+    setPinned(back, 1, false)
+    expect(sameShape(toSaved(back), saved[0]!)).toBe(false)
   })
 
-  it('round-trips through JSON on disk and drops what is malformed', () => {
-    const base = toSaved(openLayout(dev()), 'Mine')
-    const list = saveLayout([], base, undefined, 5)
-    const back = normalizeSaved(JSON.parse(JSON.stringify([...list, null, { name: 'x' }, { name: 'Dev', cells: [{ panelId: 'chat' }] }, { ...list[0], name: 'mine' }])))
-    expect(back).toEqual(list)
-    expect(sameShape(back[0]!, dev())).toBe(true)
-    expect(normalizeSaved('nope')).toEqual([])
-
-    const onScreen = openLayout(back[0]!)
-    expect(normalizeCurrent(JSON.parse(JSON.stringify(onScreen)))).toEqual(onScreen)
-    expect(normalizeCurrent(null)).toBeNull()
+  it('the Dev layout opens with its panels in its frames', () => {
+    const dev = fresh('Dev')
+    expect(openPanels(dev).sort()).toEqual(['browser', 'diff', 'editor', 'files'])
+    expect(deskRects(dev).exact).toBe(true)
+    // Closing the diff leaves a hole under Files: it collapses (Files fills the column).
+    const r = deskRects(closePanel(dev, 'diff'))
+    expect(r.panels.find((p) => p.panelId === 'files')!.rect.h).toBeCloseTo(1)
   })
-})
 
-describe('placing a panel', () => {
-  it('finds it, then an empty cell, then the sticky cell, then a new column, then the focused cell', () => {
-    const chat = openLayout(BUILTIN_LAYOUTS[0]!)
-    expect(placePanel(chat, 'chat').how).toBe('already')
+  it('switching layouts keeps the panels you had open', () => {
+    const l = open(fresh(), 'files', 'browser')
+    const next = withPanels(fresh('Side by side'), openPanels(l))
+    expect(openPanels(next)).toEqual(['files', 'browser'])
+  })
 
-    const col = placePanel(chat, 'browser')
-    expect(col.how).toBe('column')
-    expect(col.layout.cols).toBe(2)
-    expect(col.layout.cells[col.idx]).toMatchObject({ panelId: 'browser', col: 1, rowSpan: 1 })
-    expect(col.layout.colWidths.reduce((a, b) => a + b, 0)).toBeCloseTo(1, 3)
-    expect(chat.cols).toBe(1) // the original is untouched
+  it('merge and split keep stacks', () => {
+    const g = gridFromFrames(1, 2, [
+      { col: 0, row: 0, colSpan: 1, rowSpan: 1, stack: ['files'] },
+      { col: 0, row: 1, colSpan: 1, rowSpan: 1, stack: ['diff'] }
+    ])
+    mergeDown(g, 0)
+    expect(g.frames).toHaveLength(1)
+    expect(g.frames[0]!.stack).toEqual(['files', 'diff'])
+    splitFrame(g, 0)
+    expect(g.frames).toHaveLength(2)
+  })
 
-    const withHole = closeCell(openLayout(dev()), 0)
-    expect(placePanel(withHole, 'swarm')).toMatchObject({ how: 'empty', idx: 0 })
-
-    const full = openLayout(dev())
-    const sticky = placePanel(full, 'bot:juno')
-    expect(sticky.how).toBe('sticky')
-    expect(sticky.layout.cells[sticky.idx]!.panelId).toBe('bot:juno')
-
-    const wide = openLayout({ name: 'Wide', cols: 6, rows: 1, cells: ['a', 'b', 'c', 'd', 'e', 'f'].map((p, i) => ({ panelId: p, col: i, row: 0 })) })
-    expect(placePanel(wide, 'chat', 2)).toMatchObject({ how: 'focused', idx: 2 })
+  it('old saved data: cells become frames, the gone Swarm panel is dropped', () => {
+    expect(isPanel('swarm')).toBe(false)
+    expect(isPanel('bot:abc')).toBe(true)
+    const cur = normalizeCurrent({
+      name: 'Old',
+      cols: 2,
+      rows: 1,
+      cells: [
+        { col: 0, row: 0, colSpan: 1, rowSpan: 1, panelId: 'swarm', sticky: true },
+        { col: 1, row: 0, colSpan: 1, rowSpan: 1, panelId: 'browser' }
+      ]
+    })!
+    expect(openPanels(cur)).toEqual(['browser'])
+    expect(cur.frames[0]!.pinned).toBe(true)
+    expect(BUILTIN_LAYOUTS.some((l) => l.name === 'Swarm')).toBe(false)
   })
 })

@@ -1,13 +1,13 @@
 // Runs the bots: one bot in a direct chat, or the crew taking turns in the
 // main room, each turn on its own git branch that ends as a pull request.
-import type { AgentEvent, Bot, PR, RunResult } from '../../shared/types'
+import type { AgentEvent, Attachment, Bot, PR, RunResult } from '../../shared/types'
 import {
   addMsg,
   api,
   get,
-  inLayout,
   patchMsg,
   refreshFiles,
+  saveChat,
   set,
   setStatus,
   toast,
@@ -78,7 +78,8 @@ async function runTurn(
   bot: Bot,
   prompt: string,
   resume?: string,
-  turn?: number
+  turn?: number,
+  images?: Extra['images']
 ): Promise<RunResult & { msg: Msg }> {
   const s = get()
   const runId = uid()
@@ -91,6 +92,7 @@ async function runTurn(
     res = await api.agent.run({
       runId,
       prompt,
+      ...(images?.length ? { images } : {}),
       systemAppend: persona(bot, s.ws?.path ?? ''),
       cwd: s.ws?.path ?? '',
       model: bot.model || s.settings.defaultModel,
@@ -125,12 +127,12 @@ async function say(bot: Bot, text: string): Promise<void> {
 
 // ------------------------------------------------------------ direct chat
 
-async function sendDirect(bot: Bot, text: string): Promise<void> {
+async function sendDirect(bot: Bot, text: string, extra?: Extra): Promise<void> {
   const room = bot.id
-  addMsg(room, { role: 'user', text })
+  addMsg(room, { role: 'user', text, attachments: extra?.attachments })
   set((s) => ({ busy: { ...s.busy, [room]: true } }))
   stopFlag = false
-  const res = await runTurn(room, bot, text, bot.sessionId)
+  const res = await runTurn(room, bot, withFiles(text, extra), bot.sessionId, undefined, extra?.images)
   if (res.sessionId && res.sessionId !== bot.sessionId) {
     const bots = await api.bots.save({ ...bot, sessionId: res.sessionId })
     set({ bots })
@@ -174,7 +176,7 @@ ${transcript(from) || '(nothing yet, you go first)'}
 It is your turn, ${bot.name} (turn ${turn}). ${work}`
 }
 
-async function swarm(task: string): Promise<void> {
+async function swarm(said: string, extra?: Extra): Promise<void> {
   const s = get()
   const crew = s.bots.filter((b) => b.inCrew)
   if (!crew.length) {
@@ -183,12 +185,13 @@ async function swarm(task: string): Promise<void> {
   }
   const git = s.settings.swarm
   const from = (s.msgs.crew ?? []).length
-  addMsg('crew', { role: 'user', text: task })
+  addMsg('crew', { role: 'user', text: said, attachments: extra?.attachments })
+  const task = withFiles(said, extra)
+  let images = extra?.images
   const rounds = git ? Math.max(1, s.settings.rounds) : 1
   set((st) => ({
     busy: { ...st.busy, crew: true },
-    swarm: { task, running: true, git, order: crew.map((b) => b.id), current: 0, round: 1, rounds, turn: 0, from },
-    ...(git && !inLayout('swarm') ? { rightTab: 'swarm' as const, rightOpen: true } : {})
+    swarm: { task, running: true, git, order: crew.map((b) => b.id), current: 0, round: 1, rounds, turn: 0, from }
   }))
   stopFlag = false
   const stamp = Date.now().toString(36).slice(-4)
@@ -214,7 +217,8 @@ async function swarm(task: string): Promise<void> {
         }
       }
       const last = round === rounds && i === crew.length - 1
-      const res = await runTurn('crew', bot, turnPrompt(bot, crew, task, from, begin ? branch : null, turn, last), undefined, turn)
+      const res = await runTurn('crew', bot, turnPrompt(bot, crew, task, from, begin ? branch : null, turn, last), undefined, turn, images)
+      images = undefined // the first bot up sees the pictures; the rest read its words and the files
 
       if (begin) {
         try {
@@ -258,10 +262,24 @@ async function swarm(task: string): Promise<void> {
 
 // ---------------------------------------------------------------- public
 
+/** Files sent with a message: copied into the folder already; images also go as pictures. */
+export interface Extra {
+  attachments: Attachment[]
+  images: { mediaType: string; data: string }[]
+}
+
+/** The prompt with the attached files' paths, so the bot can open them. */
+export function withFiles(text: string, extra?: Extra): string {
+  const a = extra?.attachments ?? []
+  if (!a.length) return text
+  const list = a.map((f) => `- ${f.path} (${f.mime || 'file'}, ${f.size} bytes)`).join('\n')
+  return `${text || 'Have a look at the attached files.'}\n\nAttached files, copied into the working folder:\n${list}`
+}
+
 /** Sends what the person typed or said to a room: the crew, or one bot. */
-export function send(text: string, room = get().room): void {
+export function send(text: string, room = get().room, extra?: Extra): void {
   text = text.trim()
-  if (!text) return
+  if (!text && !extra?.attachments.length) return
   const s = get()
   if (!s.auth.loggedIn) {
     toast('Connect to Claude first.')
@@ -269,8 +287,8 @@ export function send(text: string, room = get().room): void {
   }
   if (room === 'crew') {
     // While the crew is working, a message is heard by the next bot up.
-    if (s.busy.crew) addMsg('crew', { role: 'user', text })
-    else void swarm(text)
+    if (s.busy.crew) addMsg('crew', { role: 'user', text: withFiles(text, extra), attachments: extra?.attachments })
+    else void swarm(text, extra)
     return
   }
   const bot = s.bots.find((b) => b.id === room)
@@ -279,7 +297,7 @@ export function send(text: string, room = get().room): void {
     toast(`${bot.name} is still working.`)
     return
   }
-  void sendDirect(bot, text)
+  void sendDirect(bot, text, extra)
 }
 
 export function stop(): void {
@@ -296,6 +314,7 @@ export async function decidePr(pr: PR, merge: boolean): Promise<void> {
     set((s) => ({
       msgs: { ...s.msgs, crew: (s.msgs.crew ?? []).map((m) => (m.pr?.id === pr.id ? { ...m, pr: next } : m)) }
     }))
+    saveChat('crew')
     if (next.status === 'conflict') toast(`PR #${pr.id} has a conflict and was not merged.`)
   } catch (e) {
     toast((e as Error).message)

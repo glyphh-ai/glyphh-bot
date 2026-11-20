@@ -18,6 +18,7 @@ import type {
   Voice
 } from '../shared/types'
 import { ACCESSORIES, EXTRAS, EYES, HEADS, POSES, TAILS, normalizeLook } from '../shared/types'
+import { connectorDomain } from '../shared/connectors'
 import { load } from './store'
 
 type Sdk = typeof import('@anthropic-ai/claude-agent-sdk')
@@ -175,12 +176,16 @@ export async function probe(cwd: string, force = false): Promise<Probe> {
     if (!list.some((m) => m.value === '')) list.unshift({ value: '', label: 'Default' })
     probeCache = {
       models: models.length ? list : FALLBACK_MODELS,
-      connectors: servers.map((s) => ({
-        name: s.name,
-        status: s.status,
-        error: s.error,
-        scope: (s as { scope?: string }).scope
-      }))
+      connectors: servers.map((s) => {
+        const url = s.config && 'url' in s.config ? s.config.url : undefined
+        return {
+          name: s.name,
+          status: s.status,
+          error: s.error,
+          scope: (s as { scope?: string }).scope,
+          domain: connectorDomain(s.name, url) ?? undefined
+        }
+      })
     }
     return probeCache
   } finally {
@@ -220,15 +225,23 @@ export async function run(wc: WebContents, p: RunParams): Promise<RunResult> {
   const done = new Promise<void>((r) => (finished = r))
 
   // Streaming input keeps the session open so permission questions can be answered.
+  type Block = { type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+  // Attached images go to Claude as images; the files themselves are in the folder for the tools.
+  const content: string | Block[] = p.images?.length
+    ? [
+        ...p.images.map((im): Block => ({ type: 'image', source: { type: 'base64', media_type: im.mediaType, data: im.data } })),
+        { type: 'text', text: p.prompt }
+      ]
+    : p.prompt
   async function* input(): AsyncGenerator<{
     type: 'user'
-    message: { role: 'user'; content: string }
+    message: { role: 'user'; content: string | Block[] }
     parent_tool_use_id: null
     session_id: string
   }> {
     yield {
       type: 'user',
-      message: { role: 'user', content: p.prompt },
+      message: { role: 'user', content },
       parent_tool_use_id: null,
       session_id: ''
     }
@@ -296,7 +309,8 @@ export async function run(wc: WebContents, p: RunParams): Promise<RunResult> {
         result.sessionId = m.session_id
         const connectors: Connector[] = m.mcp_servers.map((s) => ({
           name: s.name,
-          status: s.status
+          status: s.status,
+          domain: connectorDomain(s.name) ?? undefined
         }))
         send({ runId: p.runId, kind: 'init', sessionId: m.session_id, model: m.model, connectors })
       } else if (m.type === 'stream_event' && m.parent_tool_use_id === null) {

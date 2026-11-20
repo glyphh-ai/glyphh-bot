@@ -20,7 +20,7 @@ const api: GlyphhBotApi = {
     logout: call('auth:logout'),
     onLog: (cb) => on<string>('auth:log', cb)
   },
-  claude: { probe: call('claude:probe') },
+  claude: { probe: call('claude:probe'), icon: call('claude:icon') },
   agent: {
     run: call('agent:run'),
     stop: call('agent:stop'),
@@ -58,7 +58,16 @@ const api: GlyphhBotApi = {
     trash: call('ws:trash'),
     exists: call('ws:exists'),
     diff: call('ws:diff'),
-    pickFile: call('ws:pickFile')
+    pickFile: call('ws:pickFile'),
+    attach: call('ws:attach'),
+    stat: call('ws:stat')
+  },
+  recents: {
+    list: call('recents:list'),
+    save: call('recents:save'),
+    pin: call('recents:pin'),
+    archive: call('recents:archive'),
+    remove: call('recents:remove')
   },
   git: {
     beginTurn: call('git:beginTurn'),

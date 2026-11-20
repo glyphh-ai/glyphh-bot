@@ -1,5 +1,6 @@
 // Types shared by the main process, the preload bridge and the renderer.
 import type { Layout, SavedLayout } from './layouts'
+import type { Recent } from './recents'
 
 // Every bot is Spike, the Glyphh cat, in black and white. The parts, the
 // extras and the pose change from bot to bot; the colours never do.
@@ -117,6 +118,8 @@ export interface Connector {
   status: string
   error?: string
   scope?: string
+  /** The service's site, for its icon (shared/connectors.ts); none = the neutral icon. */
+  domain?: string
 }
 
 export interface ModelChoice {
@@ -130,9 +133,22 @@ export interface Probe {
   models: ModelChoice[]
 }
 
+/** A file attached to a message: copied into the workspace; images also go to Claude as images. */
+export interface Attachment {
+  name: string
+  /** Its path in the workspace (attachments/…). */
+  path: string
+  size: number
+  mime: string
+  /** A small data url preview for images. */
+  thumb?: string
+}
+
 export interface RunParams {
   runId: string
   prompt: string
+  /** Images sent with the prompt as image content (base64, no data: prefix). */
+  images?: { mediaType: string; data: string }[]
   systemAppend: string
   cwd: string
   model: string
@@ -229,6 +245,8 @@ export interface GlyphhBotApi {
   }
   claude: {
     probe(force?: boolean): Promise<Probe>
+    /** A service's icon as a data url (cached on disk), or null. */
+    icon(domain: string): Promise<string | null>
   }
   agent: {
     run(p: RunParams): Promise<RunResult>
@@ -271,6 +289,16 @@ export interface GlyphhBotApi {
     diff(): Promise<{ text: string; error?: string }>
     /** A file from anywhere on disk, picked in the system dialog (the Browser opens it). */
     pickFile(): Promise<string | null>
+    /** Copy an attached file into the folder's attachments/; returns its path. */
+    attach(name: string, bytes: Uint8Array): Promise<string>
+    stat(path: string): Promise<{ size: number; dir: boolean } | null>
+  }
+  recents: {
+    list(): Promise<Recent[]>
+    save(r: Recent): Promise<Recent[]>
+    pin(id: string, on: boolean): Promise<Recent[]>
+    archive(id: string, on: boolean): Promise<Recent[]>
+    remove(id: string): Promise<Recent[]>
   }
   git: {
     beginTurn(branch: string): Promise<{ base: string; baseSha: string }>

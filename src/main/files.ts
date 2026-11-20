@@ -67,6 +67,17 @@ export async function searchFiles(root: string, query: string, maxResults = 200,
   return { entries, truncated: entries.length >= maxResults }
 }
 
+/** Where an attached file goes: attachments/<safe name>, with -2, -3… when the name is taken. */
+export function attachmentPath(name: string, taken: (rel: string) => boolean): string {
+  const base = (name.split(/[\\/]/).pop() || 'file').replace(/[^\w.\- ]+/g, '_').replace(/^\.+/, '').trim() || 'file'
+  const dot = base.lastIndexOf('.')
+  const stem = dot > 0 ? base.slice(0, dot) : base
+  const ext = dot > 0 ? base.slice(dot) : ''
+  let rel = `attachments/${base}`
+  for (let i = 2; taken(rel); i++) rel = `attachments/${stem}-${i}${ext}`
+  return rel
+}
+
 export async function makeDir(root: string, p: string): Promise<void> {
   const full = inside(root, p)
   if (existsSync(full)) throw new Error(`${p} already exists`)

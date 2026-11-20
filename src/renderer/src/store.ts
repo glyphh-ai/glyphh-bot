@@ -1,15 +1,23 @@
 import { create } from 'zustand'
 import {
   BUILTIN_LAYOUTS,
-  closeCell,
+  CHAT,
+  closePanel as closeIn,
   findLayout,
+  frameOf,
   openLayout,
-  placePanel,
+  openPanel as openIn,
+  openPanels,
+  setPinned,
+  cloneLayout,
+  withPanels,
   type Layout,
   type PanelId,
   type SavedLayout
 } from '../../shared/layouts'
+import { titleFrom, type Recent } from '../../shared/recents'
 import type {
+  Attachment,
   AuthStatus,
   Bot,
   GlyphhBotApi,
@@ -58,6 +66,14 @@ export interface Msg {
   pr?: PR
   turn?: number
   spoken?: boolean
+  /** Files the person attached to this message. */
+  attachments?: Attachment[]
+}
+
+export interface PendingFile {
+  att: Attachment
+  /** Sent to the bot as a picture too. */
+  image?: { mediaType: string; data: string }
 }
 
 export interface Swarm {
@@ -74,7 +90,6 @@ export interface Swarm {
 }
 
 export type BotStatus = 'idle' | 'thinking' | 'speaking' | 'waiting'
-export type RightTab = 'swarm' | 'files' | 'editor' | 'diff' | 'browser'
 
 export interface OpenFile {
   path: string
@@ -117,8 +132,12 @@ interface State {
   status: Record<string, BotStatus>
   swarm: Swarm | null
   leftTab: 'bots' | 'connections'
-  rightTab: RightTab
-  rightOpen: boolean
+  /** Past chats, and which one each room is on now (room → recent id). */
+  recents: Recent[]
+  chatId: Record<string, string>
+  /** Files attached in a room's composer, waiting for the next message. */
+  pending: Record<string, PendingFile[]>
+  recentsOpen: boolean
   modal: Modal
   confirm: ConfirmAsk | null
   openFiles: OpenFile[]
@@ -129,13 +148,16 @@ interface State {
   toast: string
   /** Bumped whenever files on disk may have changed (the Files and Diff panels re-read). */
   fsTick: number
-  /** The layout on screen, your saved layouts, and the cell last clicked. */
+  /** The layout on screen (its frames and the panels stacked in them), and your saved layouts. */
   layout: Layout
   layouts: SavedLayout[]
-  focused: number
-  /** The cell that just got a panel, briefly lit. */
-  flash: number
+  /** The panel last clicked, and the one that just opened (briefly lit). */
+  focused: PanelId
+  flash: PanelId | null
+  /** The panel filling the whole desk, or null. */
+  expanded: PanelId | null
   commandOpen: boolean
+  /** The frame the command center opens into, or null for wherever the stack puts it. */
   commandTarget: number | null
 }
 
@@ -172,8 +194,10 @@ export const useStore = create<State>(() => ({
   status: {},
   swarm: null,
   leftTab: 'bots',
-  rightTab: 'files',
-  rightOpen: true,
+  recents: [],
+  chatId: {},
+  pending: {},
+  recentsOpen: false,
   modal: null,
   confirm: null,
   openFiles: [],
@@ -185,8 +209,9 @@ export const useStore = create<State>(() => ({
   fsTick: 0,
   layout: openLayout(BUILTIN_LAYOUTS[0]!),
   layouts: [],
-  focused: 0,
-  flash: -1,
+  focused: CHAT,
+  flash: null,
+  expanded: null,
   commandOpen: false,
   commandTarget: null
 }))
@@ -215,6 +240,7 @@ export function confirmAsk(q: Omit<ConfirmAsk, 'resolve'>): Promise<boolean> {
 export function addMsg(room: string, m: Partial<Msg> & Pick<Msg, 'role' | 'text'>): Msg {
   const msg: Msg = { id: uid(), tools: [], asks: [], ...m }
   set((s) => ({ msgs: { ...s.msgs, [room]: [...(s.msgs[room] ?? []), msg] } }))
+  saveChat(room)
   return msg
 }
 
@@ -225,6 +251,7 @@ export function patchMsg(room: string, id: string, fn: (m: Msg) => Partial<Msg>)
       [room]: (s.msgs[room] ?? []).map((m) => (m.id === id ? { ...m, ...fn(m) } : m))
     }
   }))
+  saveChat(room)
 }
 
 export function setStatus(botId: string, st: BotStatus): void {
@@ -251,16 +278,23 @@ export async function refreshFiles(): Promise<void> {
   set({ openFiles: next })
 }
 
-/** The layout shows this panel somewhere (a cell), so the right rail need not. */
-export const inLayout = (panelId: PanelId): boolean => get().layout.cells.some((c) => c.panelId === panelId)
+/** The panel is open in one of the layout's frames. */
+export const inLayout = (panelId: PanelId): boolean => frameOf(get().layout, panelId) >= 0
 
+/** Open a file in the Editor panel (stacking the Editor in if it is not open). */
 export async function openFile(path: string): Promise<void> {
   if (!get().openFiles.some((f) => f.path === path)) {
     const content = await api.ws.read(path)
     set((s) => ({ openFiles: [...s.openFiles, { path, content, saved: content }] }))
   }
   set({ activeFile: path })
-  if (!inLayout('editor')) set({ rightTab: 'editor', rightOpen: true })
+  openPanel('editor')
+}
+
+/** Show a page in the app's own Browser panel. */
+export function browse(url: string): void {
+  set({ browserUrl: url })
+  openPanel('browser')
 }
 
 export async function refreshProbe(force = false): Promise<void> {
@@ -279,52 +313,166 @@ export async function refreshProbe(force = false): Promise<void> {
 let saveTimer: ReturnType<typeof setTimeout> | undefined
 
 /** Put a layout on screen; it is kept so the app reopens on it. */
-export function setLayout(layout: Layout, focused = get().focused): void {
-  set({ layout, focused: layout.cells[focused] ? focused : 0 })
+export function setLayout(layout: Layout): void {
+  const s = get()
+  set({
+    layout,
+    focused: s.focused === CHAT || frameOf(layout, s.focused) >= 0 ? s.focused : CHAT,
+    expanded: s.expanded && (s.expanded === CHAT || frameOf(layout, s.expanded) >= 0) ? s.expanded : null
+  })
   clearTimeout(saveTimer)
   saveTimer = setTimeout(() => void api.layouts.setCurrent(get().layout), 300)
 }
 
-/** Open one of the layouts (built-in or yours) by name. */
+/** Open one of the layouts (built-in or yours) by name: its frames and panels, and the panels you had open stack in. */
 export function switchLayout(name: string): void {
   const l = findLayout(get().layouts, name)
   if (!l) {
     toast(`No layout called ${name}.`)
     return
   }
-  setLayout(openLayout(l), 0)
+  set({ expanded: null })
+  setLayout(withPanels(openLayout(l), openPanels(get().layout)))
 }
 
 let flashTimer: ReturnType<typeof setTimeout> | undefined
-
-/** Open a panel or a bot in the layout on screen (the command center's job). */
-export function openPanel(panelId: PanelId): void {
-  const { layout, idx } = placePanel(get().layout, panelId, get().focused)
-  setLayout(layout, idx)
-  set({ flash: idx })
+function lightUp(panelId: PanelId): void {
+  set({ flash: panelId, focused: panelId })
   clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => set({ flash: -1 }), 900)
+  flashTimer = setTimeout(() => set({ flash: null }), 900)
 }
 
-export function closePanel(idx: number): void {
-  setLayout(closeCell(get().layout, idx))
+/**
+ * Open a panel or a bot: one already open is focused; a new one stacks in
+ * (full, under, full, under) in the pinned frame, an empty frame, or the
+ * frame with fewest panels; `into` picks the frame by hand.
+ */
+export function openPanel(panelId: PanelId, into?: number): void {
+  const o = openIn(get().layout, panelId, into)
+  if (o.how !== 'chat' && o.how !== 'already') setLayout(o.layout)
+  const ex = get().expanded
+  if (ex && ex !== panelId) set({ expanded: null })
+  lightUp(panelId)
 }
 
-/** Put a panel in one cell (an empty cell's button, or a tile dropped on a cell). A panel already elsewhere moves. */
-export function placeAt(idx: number, panelId: PanelId): void {
-  const l = get().layout
-  if (!l.cells[idx]) return
-  const next = { ...l, cells: l.cells.map((c) => ({ ...c })) }
-  const was = next.cells.findIndex((c) => c.panelId === panelId)
-  if (was >= 0 && was !== idx) next.cells[was]!.panelId = ''
-  next.cells[idx]!.panelId = panelId
-  setLayout(next, idx)
-  set({ flash: idx })
-  clearTimeout(flashTimer)
-  flashTimer = setTimeout(() => set({ flash: -1 }), 900)
+/** Close a panel; the rest reflow. Closing the last one gives the chat the whole width. */
+export function closePanel(panelId: PanelId): void {
+  setLayout(closeIn(get().layout, panelId))
 }
 
-/** Open the command center; `target` is the empty cell it fills, or null for wherever fits. */
+export function closeAllPanels(): void {
+  let l = get().layout
+  for (const p of openPanels(l)) l = closeIn(l, p)
+  set({ expanded: null })
+  setLayout(l)
+}
+
+// ------------------------------------------------------------- recents
+
+const roomTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+/** Keep a room's chat in Recents (debounced): its title is the person's first message. */
+export function saveChat(room: string): void {
+  clearTimeout(roomTimers.get(room))
+  roomTimers.set(
+    room,
+    setTimeout(() => {
+      const s = get()
+      const msgs = s.msgs[room] ?? []
+      if (!msgs.some((m) => m.role === 'user')) return
+      let id = s.chatId[room]
+      if (!id) {
+        id = uid()
+        set((st) => ({ chatId: { ...st.chatId, [room]: id! } }))
+      }
+      const prev = s.recents.find((r) => r.id === id)
+      const first = msgs.find((m) => m.role === 'user')
+      const r: Recent = {
+        id,
+        room,
+        title: prev?.title && prev.title !== 'New chat' ? prev.title : titleFrom(first?.text || first?.attachments?.[0]?.name || ''),
+        folder: prev?.folder || s.ws?.path || '',
+        updatedAt: Date.now(),
+        sessionId: room === 'crew' ? undefined : s.bots.find((b) => b.id === room)?.sessionId,
+        msgs: msgs.map((m) => ({ ...m, streaming: false }))
+      }
+      void api.recents.save(r).then((recents) => set({ recents }))
+    }, 700)
+  )
+}
+
+/** Start a fresh chat in a room (the old one stays in Recents). */
+export async function newChat(room = get().room): Promise<void> {
+  if (get().busy[room]) {
+    toast('Wait for this chat to finish, or stop it first.')
+    return
+  }
+  set((s) => {
+    const chatId = { ...s.chatId }
+    delete chatId[room]
+    return { msgs: { ...s.msgs, [room]: [] }, chatId, room }
+  })
+  const bot = get().bots.find((b) => b.id === room)
+  if (bot?.sessionId) set({ bots: await api.bots.save({ ...bot, sessionId: undefined }) })
+}
+
+/** Reopen a past chat with its history; a bot chat resumes its Claude session. */
+export async function reopenRecent(r: Recent): Promise<void> {
+  const s = get()
+  if (r.room !== 'crew' && !s.bots.some((b) => b.id === r.room)) {
+    toast('That bot was deleted, so its chat cannot be reopened.')
+    return
+  }
+  if (s.busy[r.room]) {
+    toast('That room is busy. Stop it first.')
+    return
+  }
+  set((st) => ({
+    msgs: { ...st.msgs, [r.room]: (r.msgs as Msg[]).map((m) => ({ ...m, streaming: false })) },
+    chatId: { ...st.chatId, [r.room]: r.id },
+    room: r.room,
+    focused: CHAT
+  }))
+  const bot = get().bots.find((b) => b.id === r.room)
+  if (bot && bot.sessionId !== r.sessionId) set({ bots: await api.bots.save({ ...bot, sessionId: r.sessionId }) })
+  if (r.archived) set({ recents: await api.recents.archive(r.id, false) })
+}
+
+export async function pinRecent(id: string, on: boolean): Promise<void> {
+  set({ recents: await api.recents.pin(id, on) })
+}
+
+export async function archiveRecent(id: string, on: boolean): Promise<void> {
+  set({ recents: await api.recents.archive(id, on) })
+}
+
+/** Delete a past chat for good, after the shared confirm. */
+export async function deleteRecent(r: Recent): Promise<void> {
+  const ok = await confirmAsk({
+    title: `Delete “${r.title}”?`,
+    body: 'The chat and its history are gone for good. Files it made stay in the folder.',
+    yes: 'Delete',
+    danger: true
+  })
+  if (!ok) return
+  if (get().chatId[r.room] === r.id) await newChat(r.room)
+  set({ recents: await api.recents.remove(r.id) })
+}
+
+/** Fill the whole desk with a panel, or put it back. */
+export function toggleExpand(panelId: PanelId): void {
+  set((s) => ({ expanded: s.expanded === panelId ? null : panelId, focused: panelId }))
+}
+
+/** Pin a frame (new panels stack into it), or unpin it. */
+export function togglePin(frame: number): void {
+  const l = cloneLayout(get().layout)
+  const on = !l.frames[frame]?.pinned
+  setPinned(l, frame, on)
+  setLayout(l)
+}
+
+/** Open the command center; `target` is the frame it opens into, or null for wherever the stack puts it. */
 export function openCommand(target: number | null = null): void {
   set({ commandOpen: true, commandTarget: target })
 }
@@ -339,6 +487,10 @@ export async function boot(): Promise<void> {
     api.layouts.current()
   ])
   set({ auth, bots, settings, ws, layouts, ready: true, ...(current ? { layout: current } : {}) })
+  api.recents
+    .list()
+    .then((recents) => set({ recents }))
+    .catch(() => undefined)
   void refreshFiles()
   if (settings.elevenKeySource !== 'none') {
     api.voice

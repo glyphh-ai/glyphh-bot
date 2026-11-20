@@ -4,13 +4,13 @@
 // A panel or a bot opens into the layout on screen (or into the cell that
 // asked); a tile can also be dragged straight onto a cell.
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { allLayouts, botPanel, PANELS } from '../../shared/layouts'
+import { allLayouts, botPanel, frameOf, openPanels, PANELS } from '../../shared/layouts'
 import mascot from './assets/glyphh-mascot.png'
 import { Cat } from './Cat'
 import { MiniGrid } from './LayoutManager'
 import { Icon, ICON } from './Menu'
 import { PANEL_ICON } from './panelInfo'
-import { api, get, openPanel, placeAt, refreshFiles, set, switchLayout, toast, useStore, why } from './store'
+import { api, closeAllPanels, get, openPanel, refreshFiles, set, switchLayout, toast, useStore, why } from './store'
 
 interface Tile {
   key: string
@@ -31,7 +31,7 @@ export function CommandCenter(): JSX.Element {
   const saved = useStore((s) => s.layouts)
   const layout = useStore((s) => s.layout)
   const target = useStore((s) => s.commandTarget)
-  const rightOpen = useStore((s) => s.rightOpen)
+  const anyOpen = openPanels(layout).length > 0
   const [q, setQ] = useState('')
   const [sel, setSel] = useState(0)
   const input = useRef<HTMLInputElement>(null)
@@ -39,12 +39,11 @@ export function CommandCenter(): JSX.Element {
   const close = (): void => set({ commandOpen: false, commandTarget: null })
   const open = (panel: string): void => {
     close()
-    if (target !== null) placeAt(target, panel)
-    else openPanel(panel)
+    openPanel(panel, target ?? undefined)
   }
 
   const tiles = useMemo<Tile[]>(() => {
-    const where = (id: string): string | undefined => (layout.cells.some((c) => c.panelId === id) ? 'open' : undefined)
+    const where = (id: string): string | undefined => (id === 'chat' || frameOf(layout, id) >= 0 ? 'open' : undefined)
     return [
       ...PANELS.map((p) => ({
         key: p.id,
@@ -109,11 +108,18 @@ export function CommandCenter(): JSX.Element {
   const dock: { label: string; icon: JSX.Element; run: () => void }[] = [
     { label: 'New bot', icon: <Icon d={ICON.plus} size={22} />, run: () => set({ commandOpen: false, modal: { kind: 'bot', bot: null } }) },
     { label: 'Layouts', icon: <Icon d={ICON.layout} size={22} />, run: () => set({ commandOpen: false, modal: { kind: 'layouts' } }) },
-    {
-      label: rightOpen ? 'Hide work panel' : 'Show work panel',
-      icon: <Icon d={rightOpen ? ICON.forward : ICON.back} size={22} />,
-      run: () => set({ commandOpen: false, rightOpen: !rightOpen })
-    },
+    ...(anyOpen
+      ? [
+          {
+            label: 'Close all panels',
+            icon: <Icon d={ICON.forward} size={22} />,
+            run: () => {
+              close()
+              closeAllPanels()
+            }
+          }
+        ]
+      : []),
     {
       label: 'Open folder',
       icon: <Icon d={ICON.folder} size={22} />,

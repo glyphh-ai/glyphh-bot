@@ -4,7 +4,6 @@ import { get } from './store'
 
 export const PANEL_ICON: Record<string, string> = {
   chat: ICON.chat,
-  swarm: ICON.swarm,
   files: ICON.files,
   editor: ICON.editor,
   diff: ICON.diff,

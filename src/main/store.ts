@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { normalizeCurrent, normalizeSaved, type Layout, type SavedLayout } from '../shared/layouts'
+import { normalizeRecents, type Recent } from '../shared/recents'
 import { normalizeLook, type Bot, type Settings } from '../shared/types'
 
 interface Data {
@@ -13,6 +14,8 @@ interface Data {
   layouts: SavedLayout[]
   /** The layout on screen when the app last closed. */
   layout: Layout | null
+  /** Past chats, with their pins and archives. */
+  recents: Recent[]
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -131,7 +134,8 @@ export function load(): Data {
     elevenKey: saved.elevenKey ?? '',
     workspace: saved.workspace ?? '',
     layouts: normalizeSaved(saved.layouts),
-    layout: normalizeCurrent(saved.layout)
+    layout: normalizeCurrent(saved.layout),
+    recents: normalizeRecents(saved.recents)
   }
   return data
 }

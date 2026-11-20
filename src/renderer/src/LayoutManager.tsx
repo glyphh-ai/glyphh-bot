@@ -1,42 +1,44 @@
-// The layout manager: your layouts and the built-ins, and the grid editor the
-// Glyphh desktop uses for workspaces (help/workspace-grid.ts, ported to
-// shared/layouts.ts): pick a shape or set columns and rows, put a panel or a
-// bot in each cell, merge right or down, split, pin the cell new panels
-// reuse, drag a cell onto another to swap or move it, name it, save it.
+// The layout manager: your layouts and the built-ins, and the frame editor
+// (the Glyphh desktop's workspace grid, ported to shared/layouts.ts): pick a
+// shape or set columns and rows, merge right or down, split, pin the frame
+// new panels stack into, start a frame with a panel or a bot, drag a frame
+// onto another to swap or move it, name it, save it. Pins are saved.
 import { useState } from 'react'
 import {
   allLayouts,
   applyDrop,
-  assignPanel,
   botPanel,
   canMergeDown,
   canMergeRight,
   canSplit,
+  CHAT,
   dropModeAt,
   emptyGrid,
   fractionsFor,
-  gridCells,
-  gridFromCells,
+  gridFromFrames,
   isBuiltin,
   MAX_GRID,
   mergeDown,
   mergeRight,
   openLayout,
+  openPanels,
   PANELS,
   resizeGrid,
   saveError,
-  setSticky,
+  savedFrames,
+  setPinned,
   SHAPES,
-  splitCell,
+  splitFrame,
+  withPanels,
   type Grid,
   type SavedLayout
 } from '../../shared/layouts'
 import { panelTitle } from './panelInfo'
 import { api, confirmAsk, get, set, setLayout, toast, useStore, why } from './store'
 
-/** A layout's shape as a small icon: its cells, filled where a panel is. */
-export function MiniGrid({ l }: { l: Pick<SavedLayout, 'cols' | 'rows' | 'colWidths' | 'rowHeights' | 'cells'> }): JSX.Element {
-  const g = gridFromCells(l.cols, l.rows, l.cells)
+/** A layout's frames as a small icon: filled where a frame has panels, outlined where it is pinned. */
+export function MiniGrid({ l }: { l: Pick<SavedLayout, 'cols' | 'rows' | 'colWidths' | 'rowHeights' | 'frames'> }): JSX.Element {
+  const g = gridFromFrames(l.cols, l.rows, l.frames)
   return (
     <span
       className="minigrid"
@@ -45,8 +47,12 @@ export function MiniGrid({ l }: { l: Pick<SavedLayout, 'cols' | 'rows' | 'colWid
         gridTemplateRows: fractionsFor(l.rowHeights, g.rows).map((h) => `${h}fr`).join(' ')
       }}
     >
-      {g.cells.map((c, i) => (
-        <i key={i} className={c.panelId ? 'on' : ''} style={{ gridColumn: `${c.col + 1} / span ${c.colSpan}`, gridRow: `${c.row + 1} / span ${c.rowSpan}` }} />
+      {g.frames.map((f, i) => (
+        <i
+          key={i}
+          className={`${f.stack.length ? 'on' : ''} ${f.pinned ? 'pin' : ''}`}
+          style={{ gridColumn: `${f.col + 1} / span ${f.colSpan}`, gridRow: `${f.row + 1} / span ${f.rowSpan}` }}
+        />
       ))}
     </span>
   )
@@ -59,15 +65,19 @@ interface Draft {
   grid: Grid
   colWidths?: number[]
   rowHeights?: number[]
+  chatWidth?: number
 }
 
 const draftOf = (l: SavedLayout, keepName: boolean): Draft => ({
   name: keepName ? l.name : '',
   replacing: keepName ? l.name : undefined,
-  grid: gridFromCells(l.cols, l.rows, l.cells),
+  grid: gridFromFrames(l.cols, l.rows, l.frames),
   colWidths: l.colWidths,
-  rowHeights: l.rowHeights
+  rowHeights: l.rowHeights,
+  chatWidth: l.chatWidth
 })
+
+const describe = (stack: string[]): string => (stack.length ? stack.map(panelTitle).join(', ') : 'empty')
 
 function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.Element {
   const bots = useStore((s) => s.bots)
@@ -79,11 +89,11 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
 
   /** Change the grid in a copy and keep it. */
   const edit = (fn: (g: Grid) => number | void): void => {
-    const copy: Grid = { cols: g.cols, rows: g.rows, cells: g.cells.map((c) => ({ ...c })) }
+    const copy: Grid = { cols: g.cols, rows: g.rows, frames: g.frames.map((f) => ({ ...f, stack: f.stack.slice() })) }
     const nextSel = fn(copy)
     setD({ ...d, grid: copy })
     if (typeof nextSel === 'number') setSel(nextSel)
-    else if (!copy.cells[sel]) setSel(0)
+    else if (!copy.frames[sel]) setSel(0)
   }
 
   const saved = (): SavedLayout => ({
@@ -92,7 +102,8 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
     rows: g.rows,
     colWidths: fractionsFor(d.colWidths, g.cols),
     rowHeights: fractionsFor(d.rowHeights, g.rows),
-    cells: gridCells(g)
+    ...(d.chatWidth ? { chatWidth: d.chatWidth } : {}),
+    frames: savedFrames(g)
   })
 
   const save = async (open: boolean): Promise<void> => {
@@ -105,8 +116,11 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
     try {
       const layouts = await api.layouts.save(l, d.replacing)
       set({ layouts })
-      // The layout on screen follows a rename of itself.
-      if (open || (d.replacing && get().layout.name === d.replacing)) setLayout(openLayout(layouts.find((x) => x.name === l.name.trim())!), 0)
+      // The layout on screen follows a save of itself; Save and open puts it on screen.
+      if (open || (d.replacing && get().layout.name === d.replacing)) {
+        set({ expanded: null })
+        setLayout(withPanels(openLayout(layouts.find((x) => x.name === l.name.trim())!), openPanels(get().layout)))
+      }
       toast(`Saved ${l.name.trim()}.`)
       if (open) set({ modal: null })
       else onDone()
@@ -115,8 +129,8 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
     }
   }
 
-  const options = [...PANELS.map((p) => ({ id: p.id, label: p.label })), ...bots.map((b) => ({ id: botPanel(b.id), label: `${b.name} (bot)` }))]
-  const cell = g.cells[sel]
+  const options = [...PANELS.filter((p) => p.id !== CHAT).map((p) => ({ id: p.id, label: p.label })), ...bots.map((b) => ({ id: botPanel(b.id), label: `${b.name} (bot)` }))]
+  const frame = g.frames[sel]
 
   return (
     <div className="lm-edit">
@@ -131,15 +145,15 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
               key={s.name}
               className="shape"
               onClick={() => {
-                const apps = g.cells.map((c) => c.panelId)
+                const stacks = g.frames.map((f) => f.stack)
                 const next = emptyGrid(s.cols, s.rows)
                 for (const [i, dir] of s.merge ?? []) dir === 'down' ? mergeDown(next, i) : mergeRight(next, i)
-                next.cells.forEach((c, i) => (c.panelId = apps[i] ?? ''))
+                next.frames.forEach((f, i) => (f.stack = stacks[i] ?? []))
                 setD({ ...d, grid: next, colWidths: undefined, rowHeights: undefined })
                 setSel(0)
               }}
             >
-              <MiniGrid l={{ cols: s.cols, rows: s.rows, cells: [] }} />
+              <MiniGrid l={{ cols: s.cols, rows: s.rows, frames: [] }} />
               <span>{s.name}</span>
             </button>
           ))}
@@ -154,7 +168,7 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
           Rows
           <input type="number" min={1} max={MAX_GRID} value={g.rows} onChange={(e) => edit((x) => resizeGrid(x, x.cols, Number(e.target.value)))} />
         </label>
-        <span className="dim">Click a cell to pick it. Drag a cell onto another to swap or move it.</span>
+        <span className="dim">These are the frames beside the chat. Panels stack into them as they open: full, then under.</span>
       </div>
       <div
         className="lm-grid"
@@ -163,11 +177,11 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
           gridTemplateRows: fractionsFor(d.rowHeights, g.rows).map((h) => `${h}fr`).join(' ')
         }}
       >
-        {g.cells.map((c, i) => (
+        {g.frames.map((f, i) => (
           <div
-            key={`${c.col},${c.row}`}
-            className={`lm-cell ${i === sel ? 'on' : ''} ${c.panelId ? 'full' : ''} ${over === i ? 'over' : ''}`}
-            style={{ gridColumn: `${c.col + 1} / span ${c.colSpan}`, gridRow: `${c.row + 1} / span ${c.rowSpan}` }}
+            key={`${f.col},${f.row}`}
+            className={`lm-cell ${i === sel ? 'on' : ''} ${f.stack.length ? 'full' : ''} ${f.pinned ? 'pinned' : ''} ${over === i ? 'over' : ''}`}
+            style={{ gridColumn: `${f.col + 1} / span ${f.colSpan}`, gridRow: `${f.row + 1} / span ${f.rowSpan}` }}
             draggable
             onClick={() => setSel(i)}
             onDragStart={(e) => e.dataTransfer.setData('text/gb-lm', String(i))}
@@ -187,23 +201,33 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
               })
             }}
           >
-            <b>{c.panelId ? panelTitle(c.panelId) : 'Empty'}</b>
-            {c.sticky && <small>pinned</small>}
-            {(c.colSpan > 1 || c.rowSpan > 1) && (
+            <b>{describe(f.stack)}</b>
+            {f.pinned && <small>pinned · new panels go here</small>}
+            {(f.colSpan > 1 || f.rowSpan > 1) && (
               <small>
-                {c.colSpan} x {c.rowSpan}
+                {f.colSpan} x {f.rowSpan}
               </small>
             )}
           </div>
         ))}
       </div>
-      {cell && (
+      {frame && (
         <div className="lm-cellbar">
-          <select value={cell.panelId} onChange={(e) => edit((x) => assignPanel(x, sel, e.target.value))}>
-            <option value="">Empty</option>
+          <select
+            value={frame.stack[0] ?? ''}
+            title="The panel this frame opens with"
+            onChange={(e) =>
+              edit((x) => {
+                const id = e.target.value
+                for (const o of x.frames) o.stack = o.stack.filter((p) => p !== id)
+                x.frames[sel]!.stack = id ? [id, ...x.frames[sel]!.stack.filter((p) => p !== id).slice(1)] : []
+              })
+            }
+          >
+            <option value="">Starts empty</option>
             {options.map((o) => (
               <option key={o.id} value={o.id}>
-                {o.label}
+                Starts with {o.label}
               </option>
             ))}
           </select>
@@ -213,16 +237,11 @@ function Editor({ draft, onDone }: { draft: Draft; onDone: () => void }): JSX.El
           <button className="btn" disabled={!canMergeDown(g, sel)} onClick={() => edit((x) => mergeDown(x, sel))}>
             Merge down
           </button>
-          <button className="btn" disabled={!canSplit(g, sel)} onClick={() => edit((x) => splitCell(x, sel))}>
+          <button className="btn" disabled={!canSplit(g, sel)} onClick={() => edit((x) => splitFrame(x, sel))}>
             Split
           </button>
-          <button
-            className={`btn ${cell.sticky ? 'primary' : ''}`}
-            disabled={!cell.panelId}
-            title="Once the layout is full, panels you open replace this one"
-            onClick={() => edit((x) => setSticky(x, sel, !cell.sticky))}
-          >
-            {cell.sticky ? 'Pinned' : 'Pin'}
+          <button className={`btn ${frame.pinned ? 'primary' : ''}`} title="New panels stack into a pinned frame" onClick={() => edit((x) => setPinned(x, sel, !frame.pinned))}>
+            {frame.pinned ? 'Pinned' : 'Pin'}
           </button>
         </div>
       )}
@@ -264,20 +283,23 @@ export function LayoutManager({ edit, fromScreen }: { edit?: SavedLayout | null;
           <div className="lm-list">
             {all.map((l) => {
               const mine = !isBuiltin(l.name)
+              const pinned = l.frames.some((f) => f.pinned)
               return (
                 <div key={l.name} className={`lm-row ${l.name === current ? 'on' : ''}`}>
                   <MiniGrid l={l} />
                   <div className="lm-main">
                     <b>{l.name}</b>
                     <small>
-                      {mine ? 'yours' : 'built in'} · {l.cells.map((c) => panelTitle(c.panelId)).join(', ')}
+                      {mine ? 'yours' : 'built in'} · {l.frames.length} {l.frames.length === 1 ? 'frame' : 'frames'}
+                      {pinned ? ' · one pinned' : ''}
+                      {l.frames.some((f) => f.stack?.length) ? ` · ${l.frames.flatMap((f) => f.stack ?? []).map(panelTitle).join(', ')}` : ''}
                     </small>
                   </div>
                   <button
                     className="btn primary"
                     onClick={() => {
-                      setLayout(openLayout(l), 0)
-                      set({ modal: null })
+                      set({ modal: null, expanded: null })
+                      setLayout(withPanels(openLayout(l), openPanels(get().layout)))
                     }}
                   >
                     Open

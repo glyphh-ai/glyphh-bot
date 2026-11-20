@@ -13,7 +13,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "latest"
+    "@anthropic-ai/claude-agent-sdk": "latest",
+    "katex": "^0.19.1",
+    "mermaid": "^12.3.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

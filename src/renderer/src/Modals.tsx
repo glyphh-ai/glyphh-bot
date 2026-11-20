@@ -231,11 +231,13 @@ export function ConfirmModal(): JSX.Element | null {
   useEffect(() => {
     if (!c) return
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') answer(false)
-      if (e.key === 'Enter') answer(true)
+      if (e.key !== 'Escape' && e.key !== 'Enter') return
+      e.preventDefault()
+      e.stopPropagation()
+      answer(e.key === 'Enter')
     }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
   }, [c])
   if (!c) return null
   function answer(ok: boolean): void {
@@ -243,8 +245,8 @@ export function ConfirmModal(): JSX.Element | null {
     c!.resolve(ok)
   }
   return (
-    <div className="veil top" onMouseDown={(e) => e.target === e.currentTarget && answer(false)}>
-      <div className="modal confirm">
+    <div className="veil front" onMouseDown={(e) => e.target === e.currentTarget && answer(false)}>
+      <div className={`modal confirm ${c.danger ? 'danger' : ''}`} role="alertdialog">
         <h2>{c.title}</h2>
         {c.body && <p className="dim">{c.body}</p>}
         <div className="row end">
