@@ -86,3 +86,8 @@ GLYPHH_BOT_SHOT=/tmp/main.png npx electron .
 - `src/renderer/src`: the UI. `Chat.tsx` the chat and composer, `md.ts` markdown, `Desk.tsx` the desk, `CommandCenter.tsx` the home screen, `LayoutManager.tsx` the layout editor, `panels/` the panels, `engine.ts` runs the turns, `catArt.ts` draws the cats.
 
 Ported from: the cat from Glyphh OS (`os/src/renderer/character.js`), the command center from Glyphh OS's Apps sheet, the layout grid from the Glyphh desktop (`app/src/renderer/help/workspace-grid.ts`), and the Files, Editor, Diff, Browser and Terminal panels from the desktop's code workbench, `working-directory.ts` and `wb-terminal.ts`.
+
+
+## License
+
+Apache-2.0. See LICENSE and NOTICE. Copyright 2026 Chris Timmerman / Glyphh AI LLC. More about it: https://glyphh.ai/projects/glyphh-bot
